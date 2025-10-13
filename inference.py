@@ -11,6 +11,7 @@ import numpy as np
 import hashlib, tempfile, sys
 from concurrent.futures import ThreadPoolExecutor
 import torchaudio
+import soundfile as sf
 
 
 tempfile_kwargs = {"delete_on_close": False} if sys.version_info >= (3, 12) else {"delete": False}
@@ -412,6 +413,7 @@ class Inference:
         print(audio_segment)
         print(spectrogram)
         print('Done!')
+        return audio_segment, final_sample_rate, spectrogram
 
 
 
@@ -422,7 +424,8 @@ if __name__ == "__main__":
     ref_text = 'A meaningful livelihood.'
     ref_audio = 'reference.wav'
     gen_text = 'Today is a good day.'
-    inference.infer(ref_audio=ref_audio, ref_text=ref_text, gen_text = gen_text)
+    audio_segment, final_sample_rate, spectrogram  = inference.infer(ref_audio=ref_audio, ref_text=ref_text, gen_text = gen_text)
+    sf.write('output.wav', audio_segment, final_sample_rate)
 
 
 
