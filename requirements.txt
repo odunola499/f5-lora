@@ -1,0 +1,14 @@
+# Core PyTorch dependencies
+torch
+torchaudio
+torchdiffeq
+
+numpy
+einops
+
+librosa
+pydub
+vocos
+
+transformers
+lightning
