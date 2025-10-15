@@ -1,8 +1,8 @@
 import torch
 from torch import nn, Tensor
-from utils import GRN, apply_rotary_pos_emb
+from .utils import GRN, apply_rotary_pos_emb, RMSNorm
 from torch.nn import functional as F
-from .utils import RMSNorm
+
 
 def is_flash_attn_available():
     try:
