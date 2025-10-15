@@ -3,8 +3,8 @@ import math
 from torch.nn import functional as F
 from torch import nn, Tensor
 from .text import TextEmbedding
-from utils import RotaryEmbedding
-from block import DiTBlock, AdaLayerNorm_Final
+from .utils import RotaryEmbedding
+from .block import DiTBlock, AdaLayerNorm_Final
 
 class ConvPositionEmbedding(nn.Module):
     def __init__(self, dim, kernel_size = 31, groups = 16):

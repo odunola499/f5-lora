@@ -1,6 +1,6 @@
 import torch
 from torch import nn, Tensor
-from utils import GRN
+from .utils import GRN
 from torch.nn import functional as F
 
 def get_pos_embed_indices(start, length, max_pos, scale=1.0):
