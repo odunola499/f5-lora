@@ -7,15 +7,16 @@ from vocos import Vocos
 from huggingface_hub import hf_hub_download
 import os
 
+
 def load_checkpoint(model,
                     ckpt_path,
-                    device:torch.device,
-                    dtype = None,
-                    use_ema = True):
+                    device: torch.device,
+                    dtype=None,
+                    use_ema=True):
     device = device.type
     if dtype is None:
         dtype = (
-            torch.float16 #todo: try torch.bfloat16
+            torch.float16  # todo: try torch.bfloat16
             if "cuda" in device
                and torch.cuda.get_device_properties(device).major >= 7
                and not torch.cuda.get_device_name().endswith("[ZLUDA]")
@@ -34,13 +35,16 @@ def load_checkpoint(model,
             if key in checkpoint["model_state_dict"]:
                 del checkpoint["model_state_dict"][key]
 
-        response = model.load_state_dict(checkpoint["model_state_dict"], strict = False)
+        response = model.load_state_dict(checkpoint["model_state_dict"], strict=False)
 
     else:
         checkpoint = {"model_state_dict": checkpoint}
-        response = model.load_state_dict(checkpoint["model_state_dict"], strict = False)
+        response = model.load_state_dict(checkpoint["model_state_dict"], strict=False)
 
-    missing, unexpected = response.missing, response.unexpected
+    print(response)
+
+    missing, unexpected = response.missing_keys, response.unexpected_keys
+    missing = [i for i in missing if 'extractor' not in i]
 
     lora_missing = [k for k in missing if "lora" in k.lower()]
     lora_unexpected = [k for k in unexpected if "lora" in k.lower()]
@@ -54,80 +58,84 @@ def load_checkpoint(model,
     if lora_missing or lora_unexpected:
         print("Found newly initialized LoRA weights. Make sure this is intentional.")
 
-
     del checkpoint
     torch.cuda.empty_cache()
 
     return model
 
+
 def get_tokenizer(file_path):
-    with open(file_path,'r') as fp:
+    with open(file_path, 'r') as fp:
         vocab_char_map = {}
         for i, char in enumerate(fp):
             vocab_char_map[char[:-1]] = i
     vocab_size = len(vocab_char_map)
     return vocab_char_map, vocab_size
 
-def load_model(
-               device:torch.device,
-               config:Config,
-               use_ema = True,
-               dtype = torch.float16):
 
-    #todo: checkpoint shold be downloadable from hf
+def load_model(
+        device: torch.device,
+        config: Config,
+        use_ema=True,
+        dtype=torch.float16):
+    # todo: checkpoint shold be downloadable from hf
     ckpt_path = config.inference.ckpt_path
     vocab_path = config.tokenizer_path
 
-    if not os.path.exists(ckpt_path):
+    if not ckpt_path or not os.path.exists(ckpt_path):
+        print('Downloading model checkpoint...')
         ckpt_path = hf_hub_download(
-            repo_id = 'SWivid/F5-TTS',
-            filename = 'model_1250000.safetensors',
-            subfolder='F5TTS_v1_Base/'
+            repo_id='SWivid/F5-TTS',
+            filename='model_1250000.safetensors',
+            subfolder='F5TTS_v1_Base'
         )
+        print('Checkpoint downloaded to', ckpt_path)
 
-    if not os.path.exists(vocab_path):
+    if not os.path.exists(vocab_path) or not vocab_path:
         vocab_path = hf_hub_download(
-            repo_id = 'SWivid/F5-TTS',
-            filename = 'vocab.txt',
-            subfolder='F5TTS_v1_Base/'
+            repo_id='SWivid/F5-TTS',
+            filename='vocab.txt',
+            subfolder='F5TTS_v1_Base'
+
         )
+        print('Vocab downloaded to', vocab_path)
     vocab_char_map, vocab_size = get_tokenizer(vocab_path)
 
     model = CFM(
         transformer=DIT(
-            dim = config.model.dim,
-            depth = config.model.depth,
-            heads = config.model.heads,
+            dim=config.model.dim,
+            depth=config.model.depth,
+            heads=config.model.heads,
             ff_mult=config.model.ff_mult,
-            text_dim = config.model.text_dim,
+            text_dim=config.model.text_dim,
             conv_layers=config.model.conv_layers,
-            text_num_embeds = vocab_size,
-            mel_dim = config.audio.n_mel_channels
+            text_num_embeds=vocab_size,
+            mel_dim=config.audio.n_mel_channels
         ),
-        mel_spec_kwargs= dict(
-            n_fft = config.audio.n_fft,
-            hop_length = config.audio.hop_length,
-            win_length = config.audio.win_length,
-            n_mel_channels = config.audio.n_mel_channels,
-            target_sample_rate = config.audio.sample_rate,
-            mel_spec_type = config.audio.mel_spec_type
+        mel_spec_kwargs=dict(
+            n_fft=config.audio.n_fft,
+            hop_length=config.audio.hop_length,
+            win_length=config.audio.win_length,
+            n_mel_channels=config.audio.n_mel_channels,
+            target_sample_rate=config.audio.sample_rate,
+            mel_spec_type=config.audio.mel_spec_type
         ),
-        odeint_kwargs= dict(
-            method = config.inference.ode_method
+        odeint_kwargs=dict(
+            method=config.inference.ode_method
         ),
         vocab_char_map=vocab_char_map
     ).to(device)
 
-    if ckpt_path:
-        print('Loading checkpoint')
-        model = load_checkpoint(model, load_checkpoint, device, dtype = dtype, use_ema = use_ema)
+    print('Loading checkpoint')
+    model = load_checkpoint(model, ckpt_path, device, dtype=dtype, use_ema=use_ema)
 
     params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Model parameters: {params / 1e6:.2f}M")
     print('Loaded model')
     return model
 
-def load_vocoder(device, hf_cache_dir = None):
+
+def load_vocoder(device, hf_cache_dir=None):
     repo_id = "charactr/vocos-mel-24khz"
     config_path = hf_hub_download(repo_id=repo_id, cache_dir=hf_cache_dir, filename="config.yaml")
     model_path = hf_hub_download(repo_id=repo_id, cache_dir=hf_cache_dir, filename="pytorch_model.bin")

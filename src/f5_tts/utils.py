@@ -297,7 +297,7 @@ class MelSpec(nn.Module):
                 center=True,
                 normalized=False,
                 norm=None,
-        )
+        ).to(dtype = torch.bfloat16)
 
 
         self.register_buffer("dummy", torch.tensor(0), persistent=False)
@@ -318,12 +318,7 @@ class MelSpec(nn.Module):
         wav = self.preprocess(wav)
         with torch.no_grad():
             mel = self.extractor(
-                waveform=wav,
-                n_fft=self.n_fft,
-                n_mel_channels=self.n_mel_channels,
-                target_sample_rate=self.target_sample_rate,
-                hop_length=self.hop_length,
-                win_length=self.win_length,
+                wav
             )
         mel = mel.clamp(min = 1e-5).log()
         return mel

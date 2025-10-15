@@ -1,8 +1,7 @@
-# Core PyTorch dependencies
-torch
-torchaudio
+torch==2.7.0
+torchaudio==2.7.0
 torchdiffeq
-
+torchcodec
 numpy
 einops
 

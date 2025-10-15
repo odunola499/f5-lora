@@ -5,7 +5,6 @@ from torch.nn.utils.rnn import pad_sequence
 from torchdiffeq import odeint
 from .utils import get_epss_timesteps, lens_to_mask, list_str_to_idx, list_str_to_tensor, mask_from_frac_lengths, MelSpec
 from random import random
-from .commons import get_tokenizer
 
 
 class CFM(nn.Module):
@@ -264,54 +263,4 @@ class CFM(nn.Module):
         loss = loss[rand_span_mask]
 
         return loss.mean(), cond, pred
-
-
-if __name__ == "__main__":
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    target_sample_rate = 24000
-    n_mel_channels = 100
-    hop_length = 256
-    win_length = 1024
-    n_fft = 1024
-    mel_spec_type = "vocos"
-    target_rms = 0.1
-    cross_fade_duration = 0.15
-    ode_method = "euler"
-    nfe_step = 32  # 16, 32
-    cfg_strength = 2.0
-    sway_sampling_coef = -1.0
-    speed = 1.0
-    fix_duration = None
-
-
-    from dit import DIT
-    config = {
-        'dim':1024,
-        'depth':22,
-        'heads':16,
-        'ff_mult':2,
-        'text_dim':512,
-        'conv_layers':4
-    }
-    vocab_char_map, vocab_size = get_tokenizer('../../vocab.txt')
-    model = CFM(
-        transformer = DIT(**config, text_num_embeds=vocab_size, mel_dim=n_mel_channels),
-        mel_spec_kwargs=dict(
-            n_fft=n_fft,
-            hop_length=hop_length,
-            win_length=win_length,
-            n_mel_channels=n_mel_channels,
-            target_sample_rate=target_sample_rate,
-            mel_spec_type=mel_spec_type,
-        ),
-        odeint_kwargs=dict(
-            method=ode_method,
-        ),
-        vocab_char_map=vocab_char_map,
-    ).to(device)
-
-    params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Model parameters: {params/1e6:.2f}M")
-
 
