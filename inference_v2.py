@@ -1,6 +1,6 @@
 import torch
-from .commons import load_model, load_vocoder
-from .config import Config
+from src.f5_tts.commons import load_model, load_vocoder
+from src.f5_tts.config import Config
 from pydub import AudioSegment, silence
 import numpy as np
 import tempfile
@@ -9,7 +9,7 @@ import hashlib
 from tqdm.auto import tqdm
 from concurrent.futures import ThreadPoolExecutor
 import torchaudio
-from .utils import chunk_text
+from src.f5_tts.utils import chunk_text
 
 
 class Inference:
