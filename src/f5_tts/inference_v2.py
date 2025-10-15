@@ -1,152 +1,30 @@
-from src.f5_tts.dit import DIT
-from src.f5_tts.model import CFM
 import torch
-import tqdm
-from huggingface_hub import hf_hub_download
+from .commons import load_model, load_vocoder
+from .config import Config
 from pydub import AudioSegment, silence
-from vocos import Vocos
-import re
 import numpy as np
-import hashlib, tempfile, sys
+import tempfile
+import soundfile as sf
+import hashlib
+from tqdm.auto import tqdm
 from concurrent.futures import ThreadPoolExecutor
 import torchaudio
-import soundfile as sf
-
-
-
-
-def load_checkpoint(model, ckpt_path, device: torch.device, dtype=None, use_ema=True):
-    device = device.type
-    if dtype is None:
-        dtype = (
-            torch.float16
-            if "cuda" in device
-            and torch.cuda.get_device_properties(device).major >= 7
-            and not torch.cuda.get_device_name().endswith("[ZLUDA]")
-            else torch.float32
-        )
-    model = model.to(dtype)
-
-    ckpt_type = ckpt_path.split(".")[-1]
-    if ckpt_type == "safetensors":
-        from safetensors.torch import load_file
-
-        checkpoint = load_file(ckpt_path, device=device)
-    else:
-        checkpoint = torch.load(ckpt_path, map_location=device, weights_only=True)
-
-    if use_ema:
-        if ckpt_type == "safetensors":
-            checkpoint = {"ema_model_state_dict": checkpoint}
-        checkpoint["model_state_dict"] = {
-            k.replace("ema_model.", ""): v
-            for k, v in checkpoint["ema_model_state_dict"].items()
-            if k not in ["initted", "step"]
-        }
-
-        # patch for backward compatibility, 305e3ea
-        for key in ["mel_spec.mel_stft.mel_scale.fb", "mel_spec.mel_stft.spectrogram.window"]:
-            if key in checkpoint["model_state_dict"]:
-                del checkpoint["model_state_dict"][key]
-
-        model.load_state_dict(checkpoint["model_state_dict"])
-    else:
-        if ckpt_type == "safetensors":
-            checkpoint = {"model_state_dict": checkpoint}
-        model.load_state_dict(checkpoint["model_state_dict"])
-
-    del checkpoint
-    torch.cuda.empty_cache()
-
-    return model.to(device)
-
-
-# load model for inference
-
-
-def load_model(
-    ckpt_path,
-    device,
-    mel_spec_type,
-    vocab_file,
-    ode_method,
-    n_mel_channels,
-    n_fft,
-    win_length,
-    target_sample_rate,
-    hop_length,
-    config,
-    use_ema=True,
-
-
-):
-    model_cls = DIT
-    model_cfg = config
-
-    vocab_char_map, vocab_size = get_tokenizer(vocab_file)
-    model = CFM(
-        transformer=model_cls(**model_cfg, text_num_embeds=vocab_size, mel_dim=n_mel_channels),
-        mel_spec_kwargs=dict(
-            n_fft=n_fft,
-            hop_length=hop_length,
-            win_length=win_length,
-            n_mel_channels=n_mel_channels,
-            target_sample_rate=target_sample_rate,
-            mel_spec_type=mel_spec_type,
-        ),
-        odeint_kwargs=dict(
-            method=ode_method,
-        ),
-        vocab_char_map=vocab_char_map,
-    ).to(device)
-
-    dtype = torch.float32 if mel_spec_type == "bigvgan" else None
-    model = load_checkpoint(model, ckpt_path, device, dtype=dtype, use_ema=use_ema)
-
-    params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Model parameters: {params / 1e6:.2f}M")
-    print('Loaded model')
-
-    return model
-
-def get_tokenizer(vocab_file):
-    with open(vocab_file, 'r', encoding='utf-8') as f:
-        vocab_char_map = {}
-        for i, char in enumerate(f):
-            vocab_char_map[char[:-1]] = i
-    vocab_size = len(vocab_char_map)
-    return vocab_char_map, vocab_size
-
-def load_vocoder(device, hf_cache_dir=None):
-    repo_id = "charactr/vocos-mel-24khz"
-    config_path = hf_hub_download(repo_id=repo_id, cache_dir=hf_cache_dir, filename="config.yaml")
-    model_path = hf_hub_download(repo_id=repo_id, cache_dir=hf_cache_dir, filename="pytorch_model.bin")
-
-
-    vocoder = Vocos.from_hparams(config_path)
-    state_dict = torch.load(model_path, map_location="cpu", weights_only=True)
-    from vocos.feature_extractors import EncodecFeatures
-
-    if isinstance(vocoder.feature_extractor, EncodecFeatures):
-        encodec_parameters = {
-            "feature_extractor.encodec." + key: value
-            for key, value in vocoder.feature_extractor.encodec.state_dict().items()
-        }
-        state_dict.update(encodec_parameters)
-    vocoder.load_state_dict(state_dict)
-    vocoder = vocoder.eval().to(device)
-    return vocoder
+from .utils import chunk_text
 
 
 class Inference:
-    def __init__(self):
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = load_model('model_1250000.safetensors', device = self.device)
-        self.model = model.eval()
+    def __init__(self, config:Config):
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model = load_model(
+            device = self.device,
+            use_ema=config.inference.use_ema,
+            config = config
+                        ).eval()
+
         self.vocoder = load_vocoder(device = self.device).eval()
+        self.config = config
 
-
-    def remove_silence_edges(self, audio, silence_threshold = -42):
+    def remove_silence_edges(self, audio:AudioSegment, silence_threshold = -42):
         non_silent_start_idx = silence.detect_leading_silence(audio, silence_threshold = silence_threshold)
         audio = audio[non_silent_start_idx:]
 
@@ -155,11 +33,12 @@ class Inference:
             if ms.dBFS < silence_threshold:
                 non_silent_end_duration -= 1
             non_silent_end_duration -= 0.001
+
         trimmed_audio = audio[: int(non_silent_end_duration * 1000)]
         return trimmed_audio
 
     def preprocess_ref_audio_text(self, ref_audio_orig, ref_text, show_info=print):
-        show_info("Converting audio...")
+        print("Converting audio...")
 
         # Compute a hash of the reference audio file
         with open(ref_audio_orig, "rb") as audio_file:
@@ -169,11 +48,11 @@ class Inference:
         global _ref_audio_cache
 
         if audio_hash in _ref_audio_cache:
-            show_info("Using cached preprocessed reference audio...")
+            print("Using cached preprocessed reference audio...")
             ref_audio = _ref_audio_cache[audio_hash]
 
         else:  # first pass, do preprocess
-            with tempfile.NamedTemporaryFile(suffix=".wav", **tempfile_kwargs) as f:
+            with tempfile.NamedTemporaryFile(suffix=".wav", **self.config.tempfile_kwargs) as f:
                 temp_path = f.name
 
             aseg = AudioSegment.from_file(ref_audio_orig)
@@ -216,20 +95,16 @@ class Inference:
             _ref_audio_cache[audio_hash] = ref_audio
 
     def infer_batch_process(self,
-            ref_audio,
-            ref_text,
-            gen_text_batches,
-            progress=tqdm,
-            streaming=False,
-            chunk_size=2048,
-            target_rms = 0.1,
-            target_sample_rate = 24000,
-            speed = 1.0,
-            hop_length = 256,
-
-    ):
-        vocoder = self.vocoder
-        device = self.device
+                            ref_audio,
+                            ref_text,
+                            gen_text_batches,
+                            streaming=False,
+                            chunk_size=2048,
+                            target_rms=0.1,
+                            target_sample_rate=24000,
+                            speed=1.0,
+                            hop_length=256,
+                            ):
         audio, sr = ref_audio
         if audio.shape[0] > 1:
             audio = torch.mean(audio, dim=0, keepdim=True)
@@ -240,7 +115,7 @@ class Inference:
         if sr != target_sample_rate:
             resampler = torchaudio.transforms.Resample(sr, target_sample_rate)
             audio = resampler(audio)
-        audio = audio.to(device)
+        audio = audio.to(self.device)
 
         generated_waves = []
         spectrograms = []
@@ -270,16 +145,16 @@ class Inference:
                     cond=audio,
                     text=final_text_list,
                     duration=duration,
-                    steps=nfe_step,
-                    cfg_strength=cfg_strength,
-                    sway_sampling_coef=sway_sampling_coef,
+                    steps=self.config.inference.nfe_step,
+                    cfg_strength=self.config.inference.cfg_strength,
+                    sway_sampling_coef=self.config.inference.sway_sampling_coef,
                 )
                 del _
 
                 generated = generated.to(torch.float32)
                 generated = generated[:, ref_audio_len:, :]
                 generated = generated.permute(0, 2, 1)
-                generated_wave = vocoder.decode(generated)
+                generated_wave = self.vocoder.decode(generated)
                 if rms < target_rms:
                     generated_wave = generated_wave * rms / target_rms
 
@@ -295,19 +170,20 @@ class Inference:
                     yield generated_wave, generated_cpu
 
         if streaming:
-            for gen_text in progress.tqdm(gen_text_batches) if progress is not None else gen_text_batches:
+            for gen_text in tqdm(gen_text_batches):
                 for chunk in process_batch(gen_text):
                     yield chunk
         else:
             with ThreadPoolExecutor() as executor:
                 futures = [executor.submit(process_batch, gen_text) for gen_text in gen_text_batches]
-                for future in progress.tqdm(futures) if progress is not None else futures:
+                for future in tqdm(futures):
                     result = future.result()
                     if result:
                         generated_wave, generated_mel_spec = next(result)
                         generated_waves.append(generated_wave)
                         spectrograms.append(generated_mel_spec)
 
+            cross_fade_duration = self.config.audio.cross_fade_duration
             if generated_waves:
                 if cross_fade_duration <= 0:
                     # Simply concatenate
@@ -354,43 +230,23 @@ class Inference:
             else:
                 yield None, target_sample_rate, None
 
-    def infer(self,
-              ref_audio,
-              ref_text,
-              gen_text,
-              ):
-
+    def __call__(self,
+                 ref_audio,
+                 ref_text,
+                 gen_text):
         audio, sr = torchaudio.load(ref_audio)
-        max_chars = int(len(ref_text.encode("utf-8")) / (audio.shape[-1] / sr) * (22 - audio.shape[-1] / sr) * speed)
+        max_chars = int(len(ref_text.encode("utf-8")) / (audio.shape[-1] / sr) * (22 - audio.shape[-1] / sr) * self.config.inference.speed)
         gen_text_batches = chunk_text(gen_text, max_chars=max_chars)
-        for i, gen_text in enumerate(gen_text_batches):
-            print(f"gen_text {i}", gen_text)
-        print("\n")
-
-        audio_segment, final_sample_rate, spectrogram = next(
-            self.infer_batch_process(
-                (audio, sr),
-                ref_text,
-                gen_text_batches
-            )
-        )
-        print(audio_segment)
-        print(spectrogram)
-        print('Done!')
-        return audio_segment, final_sample_rate, spectrogram
-
-
+        return gen_text_batches
 
 if __name__ == "__main__":
-    inference = Inference()
+    config = Config()
+    infer = Inference(config)
     print('Loaded')
 
     ref_text = 'A meaningful livelihood.'
     ref_audio = 'reference.wav'
     gen_text = 'Today is a good day.'
-    audio_segment, final_sample_rate, spectrogram  = inference.infer(ref_audio=ref_audio, ref_text=ref_text, gen_text = gen_text)
+    audio_segment, final_sample_rate, spectrogram = infer(ref_audio=ref_audio, ref_text=ref_text,
+                                                                    gen_text=gen_text)
     sf.write('output.wav', audio_segment, final_sample_rate)
-
-
-
-

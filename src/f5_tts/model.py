@@ -5,6 +5,7 @@ from torch.nn.utils.rnn import pad_sequence
 from torchdiffeq import odeint
 from utils import get_epss_timesteps, lens_to_mask, list_str_to_idx, list_str_to_tensor, mask_from_frac_lengths, MelSpec
 from random import random
+from .commons import get_tokenizer
 
 
 class CFM(nn.Module):
@@ -14,8 +15,6 @@ class CFM(nn.Module):
                  odeint_kwargs=None,
                  audio_drop_prob = 0.3,
                  cond_drop_prob = 0.2,
-                 num_channels = None,
-                 mel_spec_module = None,
                  mel_spec_kwargs=None,
                  frac_lengths_mask = (0.7, 0.1),
                  vocab_char_map = None):
@@ -66,7 +65,6 @@ class CFM(nn.Module):
             edit_mask=None,
     ):
         self.eval()
-        # raw wave
 
         if cond.ndim == 2:
             cond = self.mel_spec(cond)
@@ -80,16 +78,12 @@ class CFM(nn.Module):
         if not lens:
             lens = torch.full((batch,), cond_seq_len, device=device, dtype=torch.long)
 
-        # text
-
         if isinstance(text, list):
             if self.vocab_char_map:
                 text = list_str_to_idx(text, self.vocab_char_map).to(device)
             else:
                 text = list_str_to_tensor(text).to(device)
             assert text.shape[0] == batch
-
-        # duration
 
         cond_mask = lens_to_mask(lens)
         if edit_mask is not None:
@@ -100,7 +94,7 @@ class CFM(nn.Module):
 
         duration = torch.maximum(
             torch.maximum((text != -1).sum(dim=-1), lens) + 1, duration
-        )  # duration at least text/audio prompt length plus one token, so something is generated
+        )
         duration = duration.clamp(max=max_duration)
         max_duration = duration.amax()
 
@@ -246,7 +240,7 @@ class CFM(nn.Module):
 
         # sample xt (φ_t(x) in the paper)
         t = time.unsqueeze(-1).unsqueeze(-1)
-        φ = (1 - t) * x0 + t * x1
+        x_t = (1 - t) * x0 + t * x1
         flow = x1 - x0
 
         # only predict what is within the random mask span for infilling
@@ -262,7 +256,7 @@ class CFM(nn.Module):
 
         # apply mask will use more memory; might adjust batchsize or batchsampler long sequence threshold
         pred = self.transformer(
-            x=φ, cond=cond, text=text, time=time, drop_audio_cond=drop_audio_cond, drop_text=drop_text, mask=mask
+            x=x_t, cond=cond, text=text, time=time, drop_audio_cond=drop_audio_cond, drop_text=drop_text, mask=mask
         )
 
         # flow matching loss
@@ -270,14 +264,6 @@ class CFM(nn.Module):
         loss = loss[rand_span_mask]
 
         return loss.mean(), cond, pred
-
-def get_tokenizer(vocab_file):
-    with open(vocab_file, 'r', encoding='utf-8') as f:
-        vocab_char_map = {}
-        for i, char in enumerate(f):
-            vocab_char_map[char[:-1]] = i
-    vocab_size = len(vocab_char_map)
-    return vocab_char_map, vocab_size
 
 
 if __name__ == "__main__":
@@ -308,7 +294,7 @@ if __name__ == "__main__":
         'text_dim':512,
         'conv_layers':4
     }
-    vocab_char_map, vocab_size = get_tokenizer('vocab.txt')
+    vocab_char_map, vocab_size = get_tokenizer('../../vocab.txt')
     model = CFM(
         transformer = DIT(**config, text_num_embeds=vocab_size, mel_dim=n_mel_channels),
         mel_spec_kwargs=dict(

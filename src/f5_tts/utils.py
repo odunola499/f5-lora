@@ -4,6 +4,7 @@ from torch.nn import functional as F
 from einops import rearrange
 import torchaudio
 from librosa.filters import mel as librosa_mel_fn
+import re
 
 mel_basis_cache = {}
 hann_window_cache = {}
@@ -30,6 +31,24 @@ def mask_from_start_end_indices(seq_len, start, end):
     end_mask = seq[None, :] < end[:, None]
     return start_mask & end_mask
 
+
+def chunk_text(text, max_chars = 135):
+    chunks = []
+    current_chunk = ""
+    sentences = re.split(r"(?<=[;:,.!?])\s+|(?<=[；：，。！？])", text)
+
+    for sentence in sentences:
+        if len(current_chunk.encode("utf-8")) + len(sentence.encode("utf-8")) <= max_chars:
+            current_chunk += sentence + " " if sentence and len(sentence[-1].encode("utf-8")) == 1 else sentence
+        else:
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+            current_chunk = sentence + " " if sentence and len(sentence[-1].encode("utf-8")) == 1 else sentence
+
+    if current_chunk:
+        chunks.append(current_chunk.strip())
+
+    return chunks
 
 
 def lens_to_mask(t, length: int | None = None):
@@ -251,9 +270,11 @@ class MelSpec(nn.Module):
         n_mel_channels=100,
         target_sample_rate=24_000,
         mel_spec_type="vocos",
+        device = None
     ):
         super().__init__()
-        assert mel_spec_type in ["vocos", "bigvgan"], print("We only support two extract mel backend: vocos or bigvgan")
+        if not device:
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         self.n_fft = n_fft
         self.hop_length = hop_length
@@ -261,24 +282,48 @@ class MelSpec(nn.Module):
         self.n_mel_channels = n_mel_channels
         self.target_sample_rate = target_sample_rate
 
-        if mel_spec_type == "vocos":
-            self.extractor = get_vocos_mel_spectrogram
-        elif mel_spec_type == "bigvgan":
-            self.extractor = get_bigvgan_mel_spectrogram
+        # if mel_spec_type == "vocos":
+        #     self.extractor = get_vocos_mel_spectrogram
+        # elif mel_spec_type == "bigvgan":
+        #     self.extractor = get_bigvgan_mel_spectrogram
+
+        self.extractor = torchaudio.transforms.MelSpectrogram(
+                sample_rate=target_sample_rate,
+                n_fft=n_fft,
+                win_length=win_length,
+                hop_length=hop_length,
+                n_mels=n_mel_channels,
+                power=1,
+                center=True,
+                normalized=False,
+                norm=None,
+        )
+
 
         self.register_buffer("dummy", torch.tensor(0), persistent=False)
+
+    def preprocess(self, waveform):
+        if len(waveform.shape) == 3:
+            waveform = waveform.squeeze(1)
+
+        assert len(waveform.shape) == 2
+        return waveform
+
+
 
     def forward(self, wav):
         if self.dummy.device != wav.device:
             self.to(wav.device)
 
-        mel = self.extractor(
-            waveform=wav,
-            n_fft=self.n_fft,
-            n_mel_channels=self.n_mel_channels,
-            target_sample_rate=self.target_sample_rate,
-            hop_length=self.hop_length,
-            win_length=self.win_length,
-        )
-
+        wav = self.preprocess(wav)
+        with torch.no_grad():
+            mel = self.extractor(
+                waveform=wav,
+                n_fft=self.n_fft,
+                n_mel_channels=self.n_mel_channels,
+                target_sample_rate=self.target_sample_rate,
+                hop_length=self.hop_length,
+                win_length=self.win_length,
+            )
+        mel = mel.clamp(min = 1e-5).log()
         return mel

@@ -79,7 +79,7 @@ class TextEmbedding(nn.Module):
         audio_lens = audio_mask.sum(dim = 1)
         valid_lens = valid_mask.sum(dim = 1)
 
-        upsampled_text = torch.zeros_like(text) #likely bug
+        upsampled_text = torch.zeros_like(text)
 
         for i in range(batch_size):
             audio_len = audio_lens[i].item()
