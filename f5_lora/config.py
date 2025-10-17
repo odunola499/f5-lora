@@ -4,7 +4,7 @@ from pydantic import BaseModel
 
 class HFData(BaseModel):
     repo_id:str
-    name:str
+    name:Optional[str]
     split:str
     text_column:str = 'text'
     audio_column:str = 'audio'

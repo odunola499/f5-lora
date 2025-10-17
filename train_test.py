@@ -4,6 +4,7 @@ from f5_lora.config import Config, HFData
 config = Config()
 train_data= HFData(
     repo_id="hf-internal-testing/librispeech_asr_dummy",
+    name = None,
     split="train",
     text_column="text",
     audio_column="audio",
