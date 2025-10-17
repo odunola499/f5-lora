@@ -4,10 +4,9 @@ torchdiffeq
 torchcodec
 numpy
 einops
-
 librosa
 pydub
 vocos
-
+ema_pytorch
 transformers
 lightning

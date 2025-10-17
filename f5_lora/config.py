@@ -1,6 +1,14 @@
 from dataclasses import dataclass, field
 from typing import Optional, Literal, Dict
+from pydantic import BaseModel
 
+class HFData(BaseModel):
+    repo_id:str
+    name:str
+    split:str
+    text_column:str = 'text'
+    audio_column:str = 'audio'
+    stream:bool = True
 
 @dataclass
 class AudioConfig:
@@ -33,17 +41,41 @@ class InferenceConfig:
     speed: float = 1.0
     fix_duration: Optional[float] = None
     use_ema:bool = True
-    ckpt_path:str = None
 
 @dataclass
 class TrainConfig:
-    pass
+    epochs:Optional[int]
+    learning_rate:float
+    max_steps:Optional[int] = 20000
+    warmup_steps:int = 2000
+    keep_last_n_checkpoints:int = 2
+    ckpt_path:str = 'checkpoints'
+    pretrained_ckpt:Optional[str] = None
+    resume_run:bool = True
+    batch_size:int = 8
+    grad_accumulation_steps:Optional[int] = 2
+    max_grad_norm:int = 1.0
+    noise_scheduler:Optional[str] = None
+    log_to:Literal['wandb','csv'] = 'wandb'
+    wandb_project:str = 'F5_TTS'
+    wandb_run_name:Optional[str] = None
+    log_samples:bool = True
+    optimizer:Literal['bnb', 'adamw'] = 'bnb'
+    lr_scheduler:Literal['cosine', 'linear_lr', 'sequential_lr'] = 'cosine'
+    save_interval:Optional[int] = 1000
+    val_interval:Optional[int] = 1000
+
+
 
 @dataclass
 class Config:
     mode: Literal["train", "inference"] = "train"
     seed: int = 42
+    ckpt_path:Optional[str] = None
     tokenizer_path:str = 'vocab.txt'
+    hf_repo_id: str = 'SWivid/F5-TTS'
+    filename: str = 'model_1250000.safetensors'
+    subfolder: str = 'F5TTS_v1_Base'
     audio: AudioConfig = field(default_factory=AudioConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
     inference: InferenceConfig = field(default_factory=InferenceConfig)
@@ -60,10 +92,3 @@ def get_default_config(mode: str = "train") -> Config:
         cfg.tempfile_kwargs = {"delete": False}
     return cfg
 
-
-# Usage example:
-# ---------------
-# from config import get_default_config
-# cfg = get_default_config("inference")
-# print(cfg.model.dim)
-# print(cfg.audio.sample_rate)

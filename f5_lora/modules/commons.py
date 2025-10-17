@@ -1,12 +1,11 @@
 import torch
 from safetensors.torch import load_file
-from .config import Config
+from f5_lora.config import Config
 from .dit import DIT
 from .model import CFM
 from vocos import Vocos
 from huggingface_hub import hf_hub_download
 import os
-
 
 def load_checkpoint(model,
                     ckpt_path,
@@ -77,28 +76,17 @@ def load_model(
         device: torch.device,
         config: Config,
         use_ema=True,
-        dtype=torch.float16):
-    # todo: checkpoint shold be downloadable from hf
-    ckpt_path = config.inference.ckpt_path
-    vocab_path = config.tokenizer_path
+        dtype=torch.float16,
+        load_pretrained=True,
+        ckpt_path=None):
 
-    if not ckpt_path or not os.path.exists(ckpt_path):
-        print('Downloading model checkpoint...')
-        ckpt_path = hf_hub_download(
-            repo_id='SWivid/F5-TTS',
-            filename='model_1250000.safetensors',
-            subfolder='F5TTS_v1_Base'
-        )
-        print('Checkpoint downloaded to', ckpt_path)
+    vocab_path = hf_hub_download(
+        repo_id=config.hf_repo_id,
+        filename='vocab.txt',
+        subfolder=config.subfolder
 
-    if not os.path.exists(vocab_path) or not vocab_path:
-        vocab_path = hf_hub_download(
-            repo_id='SWivid/F5-TTS',
-            filename='vocab.txt',
-            subfolder='F5TTS_v1_Base'
-
-        )
-        print('Vocab downloaded to', vocab_path)
+    )
+    print('Vocab downloaded to', vocab_path)
     vocab_char_map, vocab_size = get_tokenizer(vocab_path)
 
     model = CFM(
@@ -127,7 +115,24 @@ def load_model(
     ).to(device)
 
     print('Loading checkpoint')
-    model = load_checkpoint(model, ckpt_path, device, dtype=dtype, use_ema=use_ema)
+
+    if load_pretrained:
+        if ckpt_path:
+            print('Loading model checkpoint from', ckpt_path)
+        elif os.path.exists(config.ckpt_path) and config.ckpt_path is not None:
+            ckpt_path = config.ckpt_path
+            print('Loading model checkpoint from', ckpt_path)
+        else:
+            print('ckpt_path not found, downloading from HF hub')
+            assert config.hf_repo_id is not None, "hf_repo_id must be specified in config"
+            assert config.filename is not None, "filename must be specified in config"
+            ckpt_path = hf_hub_download(
+                repo_id= config.hf_repo_id,
+                filename=config.filename,
+                subfolder=config.subfolder
+            )
+            print('Checkpoint downloaded to', ckpt_path)
+        model = load_checkpoint(model, ckpt_path, device, dtype=dtype, use_ema=use_ema)
 
     params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Model parameters: {params / 1e6:.2f}M")

@@ -297,7 +297,7 @@ class MelSpec(nn.Module):
                 center=True,
                 normalized=False,
                 norm=None,
-        ).to(dtype = torch.bfloat16)
+        )
 
 
         self.register_buffer("dummy", torch.tensor(0), persistent=False)
@@ -322,3 +322,4 @@ class MelSpec(nn.Module):
             )
         mel = mel.clamp(min = 1e-5).log()
         return mel
+
