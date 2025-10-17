@@ -45,7 +45,7 @@ class InferenceConfig:
 @dataclass
 class TrainConfig:
     epochs:Optional[int]
-    learning_rate:float
+    learning_rate:float = 3e-4
     max_steps:Optional[int] = 20000
     warmup_steps:int = 2000
     keep_last_n_checkpoints:int = 2

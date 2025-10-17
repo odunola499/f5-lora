@@ -10,3 +10,7 @@ vocos
 ema_pytorch
 transformers
 lightning
+wandb
+soundfile
+bitsandbytes
+random_word
