@@ -205,7 +205,7 @@ def train_model(config: Config, train_module: TrainModule):
         logger = True
 
     trainer = pl.Trainer(
-        # logger=logger,
+        logger=logger,
         callbacks=callbacks,
         max_epochs=config.train.epochs,
         max_steps=config.train.max_steps,
@@ -217,7 +217,7 @@ def train_model(config: Config, train_module: TrainModule):
         enable_progress_bar=True,
         enable_model_summary=True,
         benchmark=True,
-        # num_sanity_val_steps=0 if config.train.val_interval else None,
+        num_sanity_val_steps=0 if config.train.val_interval else None,
     )
 
     trainer.fit(train_module, train_dataloaders=train_module.train_loader, val_dataloaders=train_module.valid_loader)

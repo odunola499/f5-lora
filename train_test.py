@@ -2,10 +2,14 @@ from f5_lora.train import get_loader, TrainModule, train_model
 from f5_lora.config import Config, HFData
 
 config = Config()
+config.train.max_steps = 5000
+config.train.warmup_steps = 500
+config.train.batch_size = 4
+
 train_data= HFData(
-    repo_id="hf-internal-testing/librispeech_asr_dummy",
+    repo_id="toyrem/naija_english",
     name = None,
-    split="validation",
+    split="train",
     text_column="text",
     audio_column="audio",
     stream=True,
