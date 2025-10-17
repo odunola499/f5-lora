@@ -12,11 +12,10 @@ from lightning.pytorch.callbacks import (
 )
 from lightning.pytorch.loggers import WandbLogger
 from ema_pytorch import EMA
-from f5_lora.train import OPTIMIZER_MAPPING, LR_SCHEDULER_MAPPING
+from .optimizer import OPTIMIZER_MAPPING, LR_SCHEDULER_MAPPING
 from f5_lora.config import Config
 from f5_lora.modules.commons import load_model, load_vocoder
 from safetensors.torch import save_file
-
 
 now_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 word = RandomWords().get_random_word()
@@ -24,13 +23,13 @@ word = RandomWords().get_random_word()
 run_name = f"{now_str}_{word}"
 
 
-def save_checkpoint(directory, model:torch.nn.Module, ema_model:EMA, optimizer, scheduler, step, save_n_files):
+def save_checkpoint(directory, model: torch.nn.Module, ema_model: EMA, optimizer, scheduler, step, save_n_files):
     os.makedirs(directory, exist_ok=True)
     checkpoint = dict(
-        model_state_dict = model.state_dict(),
-        optimizer_state_dict = optimizer.state_dict(),
-        scheduler_state_dict = scheduler.state_dict(),
-        ema_model_state_dict = ema_model.state_dict(),
+        model_state_dict=model.state_dict(),
+        optimizer_state_dict=optimizer.state_dict(),
+        scheduler_state_dict=scheduler.state_dict(),
+        ema_model_state_dict=ema_model.state_dict(),
     )
     filename = os.path.join(directory, f'model_{step}.safetensors')
     last = os.path.join(directory, 'last.safetensors')
@@ -51,9 +50,9 @@ class TrainModule(pl.LightningModule):
     def __init__(
             self,
             config: Config,
-            train_loader:DataLoader,
-            valid_loader:Optional[DataLoader] = None
-):
+            train_loader: DataLoader,
+            valid_loader: Optional[DataLoader] = None
+    ):
         super().__init__()
         self.vocoder = None
         self.model = None
@@ -61,42 +60,39 @@ class TrainModule(pl.LightningModule):
         self.config = config
         self.train_loader = train_loader
         self.valid_loader = valid_loader
-        
 
     def configure_model(self):
         config = self.config
         if config.train.resume_run:
             model = load_model(
-                device = self.device,
-                config = config,
-                dtype = self.dtype,
-                load_pretrained = True,
+                device=self.device,
+                config=config,
+                dtype=self.dtype,
+                load_pretrained=True,
                 ckpt_path=config.train.pretrained_ckpt,
-                use_ema = False
+                use_ema=True
             )
         else:
             model = load_model(
-                device = self.device,
-                config = config,
-                dtype = self.dtype,
-                load_pretrained = False,
+                device=self.device,
+                config=config,
+                dtype=self.dtype,
+                load_pretrained=False,
                 ckpt_path=None,
-                use_ema = False
+                use_ema=False
             )
-
 
         self.model = model
         self.ema_model = EMA(model, include_online_model=False)
         self.vocoder = load_vocoder(self.device)
         self.vocoder.requires_grad_(False)
 
-
     def configure_optimizers(self):
         optimizer_cls = OPTIMIZER_MAPPING.get(self.config.train.optimizer, None)
         lr_scheduler_cls = LR_SCHEDULER_MAPPING.get(self.config.train.lr_scheduler, None)
 
         optimizer = optimizer_cls(
-            self.parameters(), lr = self.config.train.learning_rate, weight_decay=1e-2
+            self.parameters(), lr=self.config.train.learning_rate, weight_decay=1e-2
         )
         scheduler = lr_scheduler_cls(
             optimizer,
@@ -105,19 +101,12 @@ class TrainModule(pl.LightningModule):
         )
         return [optimizer], [{"scheduler": scheduler, "interval": "step"}]
 
-
     def build_optim_groups(self):
-        #todo: build optimizer groups
+        # todo: build optimizer groups
         pass
 
     def train_dataloader(self):
         return self.train_loader
-
-    def val_dataloader(self):
-        if self.valid_loader:
-            return self.valid_loader
-        return None
-
 
     def training_step(self, batch):
         mel_spec = batch['mel'].permute(0, 2, 1)
@@ -125,7 +114,7 @@ class TrainModule(pl.LightningModule):
         text_inputs = batch['text']
 
         loss, cond, pred = self.model(
-            mel_spec, text = text_inputs, lens = mel_lengths,
+            mel_spec, text=text_inputs, lens=mel_lengths,
         )
         self.log('train/loss', loss, prog_bar=True, sync_dist=True)
         return loss
@@ -145,13 +134,13 @@ class TrainModule(pl.LightningModule):
 
         if self.global_step % self.config.train.save_interval == 0 and self.global_rank == 0:
             save_checkpoint(
-                directory = self.config.train.ckpt_path,
-                model = self.model,
-                ema_model = self.ema_model,
-                optimizer = self.trainer.optimizers[0],
-                scheduler = self.trainer.lr_schedulers()[0]['scheduler'],
-                step = self.global_step,
-                save_n_files = self.config.train.keep_last_n_checkpoints
+                directory=self.config.train.ckpt_path,
+                model=self.model,
+                ema_model=self.ema_model,
+                optimizer=self.trainer.optimizers[0],
+                scheduler=self.trainer.lr_schedulers()[0]['scheduler'],
+                step=self.global_step,
+                save_n_files=self.config.train.keep_last_n_checkpoints
             )
         return loss
 
@@ -174,11 +163,11 @@ class TrainModule(pl.LightningModule):
         ]
         with torch.inference_mode():
             generated, _ = self.model.sample(
-                cond = infer_text,
-                duration = ref_audio_len * 2,
-                steps = self.config.inference.nfe_step,
-                cfg_strength = self.config.inference.cfg_strength,
-                sway_sampling_coef = self.config.inference.sway_sampling_coef,
+                cond=infer_text,
+                duration=ref_audio_len * 2,
+                steps=self.config.inference.nfe_step,
+                cfg_strength=self.config.inference.cfg_strength,
+                sway_sampling_coef=self.config.inference.sway_sampling_coef,
             )
             generated = generated.to(torch.float32)
             gen_mel_spec = generated[:, ref_audio_len:, :].permute(0, 2, 1).to(self.accelerator.device)
@@ -187,14 +176,13 @@ class TrainModule(pl.LightningModule):
             gen_audio = self.vocoder.decode(gen_mel_spec).cpu().to_numpy()
             ref_audio = self.vocoder.decode(ref_mel_spec).cpu().to_numpy()
 
-        self.logger.log('audio/gen_sample', wandb.Audio(gen_audio, caption = infer_text,sample_rate=24000))
-        self.logger.log('audio/ref_sample', wandb.Audio(ref_audio, caption = infer_text, sample_rate=24000))
+        self.logger.log('audio/gen_sample', wandb.Audio(gen_audio, caption=infer_text, sample_rate=24000))
+        self.logger.log('audio/ref_sample', wandb.Audio(ref_audio, caption=infer_text, sample_rate=24000))
 
     def optimizer_zero_grad(self, epoch: int, batch_idx: int, optimizer) -> None:
         optimizer.zero_grad()
         if self.global_rank == 0:
             self.ema_model.update()
-
 
 
 def train_model(config: Config, train_module: TrainModule):
@@ -217,7 +205,7 @@ def train_model(config: Config, train_module: TrainModule):
         logger = True
 
     trainer = pl.Trainer(
-        logger=logger,
+        # logger=logger,
         callbacks=callbacks,
         max_epochs=config.train.epochs,
         max_steps=config.train.max_steps,
@@ -229,7 +217,7 @@ def train_model(config: Config, train_module: TrainModule):
         enable_progress_bar=True,
         enable_model_summary=True,
         benchmark=True,
-        num_sanity_val_steps=0 if config.train.val_interval else None,
+        # num_sanity_val_steps=0 if config.train.val_interval else None,
     )
 
     trainer.fit(train_module, train_dataloaders=train_module.train_loader, val_dataloaders=train_module.valid_loader)

@@ -15,7 +15,7 @@ class CFM(nn.Module):
                  audio_drop_prob = 0.3,
                  cond_drop_prob = 0.2,
                  mel_spec_kwargs=None,
-                 frac_lengths_mask = (0.7, 0.1),
+                 frac_lengths_mask = (0.1, 0.7),
                  vocab_char_map = None):
 
         super().__init__()
@@ -189,13 +189,12 @@ class CFM(nn.Module):
 
     def forward(
             self,
-            inp,  # mel or raw wave  # noqa: F722
+            inp,  # mel or raw wave
             text,  # noqa: F722
             *,
             lens = None,  # noqa: F821
             noise_scheduler: str | None = None,
     ):
-        # handle raw wave
         if inp.ndim == 2:
             inp = self.mel_spec(inp)
             inp = inp.permute(0, 2, 1)
@@ -205,8 +204,6 @@ class CFM(nn.Module):
         dtype = inp.dtype
         device = inp.device
 
-
-        # handle text as string
         if isinstance(text, list):
             if self.vocab_char_map:
                 text = list_str_to_idx(text, self.vocab_char_map).to(device)
@@ -214,17 +211,15 @@ class CFM(nn.Module):
                 text = list_str_to_tensor(text).to(device)
             assert text.shape[0] == batch
 
-        # lens and mask
-        if not lens:
+        if lens is None:
             lens = torch.full((batch,), seq_len, device=device)
 
-        mask = lens_to_mask(lens, length=seq_len)  # useless here, as collate_fn will pad to max length in batch
+        mask = lens_to_mask(lens, length=seq_len)
 
-        # get a random span to mask out for training conditionally
         frac_lengths = torch.zeros((batch,), device=self.device).float().uniform_(*self.frac_lengths_mask)
         rand_span_mask = mask_from_frac_lengths(lens, frac_lengths)
 
-        if mask:
+        if mask is not None:
             rand_span_mask &= mask
 
         # mel is x1
@@ -252,7 +247,6 @@ class CFM(nn.Module):
         else:
             drop_text = False
 
-        # apply mask will use more memory; might adjust batchsize or batchsampler long sequence threshold
         pred = self.transformer(
             x=x_t, cond=cond, text=text, time=time, drop_audio_cond=drop_audio_cond, drop_text=drop_text, mask=mask
         )

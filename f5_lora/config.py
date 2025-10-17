@@ -44,7 +44,7 @@ class InferenceConfig:
 
 @dataclass
 class TrainConfig:
-    epochs:Optional[int]
+    epochs:Optional[int] = None
     learning_rate:float = 3e-4
     max_steps:Optional[int] = 20000
     warmup_steps:int = 2000
@@ -52,7 +52,7 @@ class TrainConfig:
     ckpt_path:str = 'checkpoints'
     pretrained_ckpt:Optional[str] = None
     resume_run:bool = True
-    batch_size:int = 8
+    batch_size:int = 1
     grad_accumulation_steps:Optional[int] = 2
     max_grad_norm:int = 1.0
     noise_scheduler:Optional[str] = None
@@ -61,7 +61,7 @@ class TrainConfig:
     wandb_run_name:Optional[str] = None
     log_samples:bool = True
     optimizer:Literal['bnb', 'adamw'] = 'bnb'
-    lr_scheduler:Literal['cosine', 'linear_lr', 'sequential_lr'] = 'cosine'
+    lr_scheduler:Literal['cosine_warmup', 'linear_lr', 'sequential_lr'] = 'cosine_warmup'
     save_interval:Optional[int] = 1000
     val_interval:Optional[int] = 1000
 

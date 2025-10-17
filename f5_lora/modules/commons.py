@@ -119,7 +119,7 @@ def load_model(
     if load_pretrained:
         if ckpt_path:
             print('Loading model checkpoint from', ckpt_path)
-        elif os.path.exists(config.ckpt_path) and config.ckpt_path is not None:
+        elif config.ckpt_path is not None and os.path.exists(config.ckpt_path):
             ckpt_path = config.ckpt_path
             print('Loading model checkpoint from', ckpt_path)
         else:
