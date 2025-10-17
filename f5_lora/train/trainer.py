@@ -117,6 +117,16 @@ class TrainModule(pl.LightningModule):
             mel_spec, text=text_inputs, lens=mel_lengths,
         )
         self.log('train/loss', loss, prog_bar=True, sync_dist=True)
+        if self.global_step % self.config.train.save_interval == 0 and self.global_rank == 0:
+            save_checkpoint(
+                directory=self.config.train.ckpt_path,
+                model=self.model,
+                ema_model=self.ema_model,
+                optimizer=self.trainer.optimizers[0],
+                scheduler=self.trainer.lr_schedulers()[0]['scheduler'],
+                step=self.global_step,
+                save_n_files=self.config.train.keep_last_n_checkpoints
+            )
         return loss
 
     def validation_step(self, batch):
@@ -132,16 +142,6 @@ class TrainModule(pl.LightningModule):
             if random.random() < 0.2:
                 self.log_audio(batch)
 
-        if self.global_step % self.config.train.save_interval == 0 and self.global_rank == 0:
-            save_checkpoint(
-                directory=self.config.train.ckpt_path,
-                model=self.model,
-                ema_model=self.ema_model,
-                optimizer=self.trainer.optimizers[0],
-                scheduler=self.trainer.lr_schedulers()[0]['scheduler'],
-                step=self.global_step,
-                save_n_files=self.config.train.keep_last_n_checkpoints
-            )
         return loss
 
     def on_after_backward(self) -> None:
