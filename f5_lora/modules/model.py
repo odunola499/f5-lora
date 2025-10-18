@@ -5,6 +5,7 @@ from torch.nn.utils.rnn import pad_sequence
 from torchdiffeq import odeint
 from .utils import get_epss_timesteps, lens_to_mask, list_str_to_idx, list_str_to_tensor, mask_from_frac_lengths, MelSpec
 from random import random
+from .loralinear import LoraManager
 
 
 class CFM(nn.Module):
