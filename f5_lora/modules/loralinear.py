@@ -30,19 +30,18 @@ class LoraLinear(nn.Module):
         assert 'lora' not in response.missing_keys, f'Missing keys in LoRA state dict: {response.missing_keys}'
         print('LoRA state dict loaded successfully.')
 
-    modules = [
-        'pwconv1',
-        'pwconv2',
-        'time_mlp',
-        'proj',
-        'proj_out',
-        'long_skip_connection',
-        'to_q',
-        'to_k',
-        'to_v',
-        'text_embed.text_embed',
-        'to_out.0'
-    ]
+modules = [
+    'pwconv1',
+    'pwconv2',
+    'time_mlp',
+    'proj',
+    'proj_out',
+    'to_q',
+    'to_k',
+    'to_v',
+    'ff.2'
+    'to_out.0'
+]
 
 class LoraManager:
     def __init__(self, model:nn.Module):
@@ -86,22 +85,23 @@ class LoraManager:
                  }
         save_file(weights, path)
 
-    def load_adapter(self, name, path):
+    def load_adapter(self, path):
         with safe_open(path, framework="pt") as f:
             rank = f.get_tensor('rank').item()
             alpha = f.get_tensor('alpha').item()
             state_dict = f.get_tensor('state_dict')
 
-        reusable_layers = None
         old_alpha, old_rank = self.alpha, self.rank
         if old_alpha is not None:
             if old_alpha == alpha and old_rank == rank:
                 self.model.load_state_dict(state_dict, strict = False)
             else:
-                reusable_layers = False
+                self.clean_model()
+                self.prepare_model(rank = rank, alpha = alpha, target_modules = modules)
+                self.model.load_state_dict(state_dict, strict = False)
         else:
-            # Linear layers in model
-            pass
+            self.prepare_model(rank=rank, alpha=alpha, target_modules=modules)
+            self.model.load_state_dict(state_dict, strict=False)
 
 
     def _set_submodule(self, model, name, new_module):
@@ -123,12 +123,5 @@ class LoraManager:
         else:
             raise KeyError(f"Cannot set submodule: {name}")
 
-
-    def load_adapter(self, name, path):
-        assert ".safetensors" in path, "adapter checkpoints are valid .safetensors files"
-        with safe_open(path, framework="pt") as f:
-            rank = f.get_tensor('rank').item()
-            alpha = f.get_tensor('alpha').item()
-            state_dict = f.get_tensor('state_dict')
 
 

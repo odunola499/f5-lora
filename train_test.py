@@ -2,7 +2,7 @@ from f5_lora.train import get_loader, TrainModule, train_model
 from f5_lora.config import Config, HFData
 
 config = Config()
-config.train.max_steps = 5000
+config.train.max_steps = 1000
 config.train.warmup_steps = 500
 config.train.batch_size = 4
 
