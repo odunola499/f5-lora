@@ -8,9 +8,9 @@ import torch
 from torch.utils.data import DataLoader
 import lightning as pl
 from lightning.pytorch.callbacks import (
-    LearningRateMonitor,
+    LearningRateMonitor, ModelCheckpoint
 )
-from lightning.pytorch.loggers import WandbLogger
+from lightning.pytorch.loggers import WandbLogger, CSVLogger
 from ema_pytorch import EMA
 from .optimizer import OPTIMIZER_MAPPING, LR_SCHEDULER_MAPPING
 from f5_lora.config import Config
@@ -23,26 +23,25 @@ word = RandomWords().get_random_word()
 run_name = f"{now_str}_{word}"
 
 
-def save_checkpoint(directory, model: torch.nn.Module, ema_model: EMA, optimizer, scheduler, step, save_n_files):
+def save_checkpoint(directory, model, ema_model: EMA, optimizer, scheduler, step, save_n_files):
     os.makedirs(directory, exist_ok=True)
-    checkpoint = dict(
-        model_state_dict=model.state_dict(),
-        optimizer_state_dict=optimizer.state_dict(),
-        scheduler_state_dict=scheduler.state_dict(),
-        ema_model_state_dict=ema_model.state_dict(),
-    )
+
+    state_dict = ema_model.state_dict()
+    flat_state_dict = {k: v for k, v in state_dict.items() if isinstance(v, torch.Tensor)}
+
     filename = os.path.join(directory, f'model_{step}.safetensors')
     last = os.path.join(directory, 'last.safetensors')
+
     if os.path.exists(last):
         os.remove(last)
-    save_file(checkpoint, last)
-    save_file(checkpoint, filename)
+    save_file(flat_state_dict, last)
+    save_file(flat_state_dict, filename)
 
-    files = os.listdir(directory)
-    files.sort()
+    files = sorted(os.listdir(directory))
     if len(files) > save_n_files:
         for f in files[:-save_n_files]:
             os.remove(os.path.join(directory, f))
+
     print(f"Checkpoint saved at step {step} to {filename}")
 
 
@@ -117,13 +116,15 @@ class TrainModule(pl.LightningModule):
             mel_spec, text=text_inputs, lens=mel_lengths,
         )
         self.log('train/loss', loss, prog_bar=True, sync_dist=True)
-        if self.global_step % self.config.train.save_interval == 0 and self.global_rank == 0:
+
+        scheduler = self.trainer.lr_scheduler_configs[0].scheduler
+        if self.global_step % self.config.train.save_interval == 0 and self.trainer.is_global_zero:
             save_checkpoint(
                 directory=self.config.train.ckpt_path,
                 model=self.model,
                 ema_model=self.ema_model,
                 optimizer=self.trainer.optimizers[0],
-                scheduler=self.trainer.lr_schedulers()[0]['scheduler'],
+                scheduler=scheduler,
                 step=self.global_step,
                 save_n_files=self.config.train.keep_last_n_checkpoints
             )
@@ -181,8 +182,8 @@ class TrainModule(pl.LightningModule):
 
     def optimizer_zero_grad(self, epoch: int, batch_idx: int, optimizer) -> None:
         optimizer.zero_grad()
-        if self.global_rank == 0:
-            self.ema_model.update()
+        # if self.global_rank == 0:
+        self.ema_model.update()
 
 
 def train_model(config: Config, train_module: TrainModule):
@@ -202,10 +203,18 @@ def train_model(config: Config, train_module: TrainModule):
         )
         logger = wandb_logger
     else:
-        logger = True
+        logger = CSVLogger(save_dir = 'train_checkpoints')
+    checkpoint = ModelCheckpoint(
+        'train_checkpoints',
+        monitor='train/loss',
+        save_top_k=1,
+        mode='min',
+        save_last=True
+    )
+    callbacks.append(checkpoint)
 
     trainer = pl.Trainer(
-        logger=logger,
+        # logger=logger,
         callbacks=callbacks,
         max_epochs=config.train.epochs,
         max_steps=config.train.max_steps,

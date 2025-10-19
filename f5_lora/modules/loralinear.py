@@ -33,7 +33,6 @@ class LoraLinear(nn.Module):
 modules = [
     'pwconv1',
     'pwconv2',
-    'time_mlp',
     'proj',
     'proj_out',
     'to_q',

@@ -317,9 +317,8 @@ class MelSpec(nn.Module):
 
         wav = self.preprocess(wav)
         with torch.no_grad():
-            mel = self.extractor(
-                wav
-            )
-        mel = mel.clamp(min = 1e-5).log()
+            mel = self.extractor(wav)
+        mel = mel.clamp(min=1e-5).log()
         return mel
+
 
