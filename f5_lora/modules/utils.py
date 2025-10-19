@@ -310,7 +310,6 @@ class MelSpec(nn.Module):
         return waveform
 
 
-
     def forward(self, wav):
         if self.dummy.device != wav.device:
             self.to(wav.device)
