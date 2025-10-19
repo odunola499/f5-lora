@@ -10,10 +10,11 @@ from tqdm.auto import tqdm
 from concurrent.futures import ThreadPoolExecutor
 import torchaudio
 from f5_lora.modules.utils import chunk_text
+from torch.profiler import profile, ProfilerActivity, record_function
 
 
 class Inference:
-    def __init__(self, config:Config):
+    def __init__(self, config:Config, profile_model = False):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model = load_model(
             device = self.device,
@@ -23,6 +24,7 @@ class Inference:
 
         self.vocoder = load_vocoder(device = self.device).eval()
         self.config = config
+        self.profile_model = profile_model
 
     def remove_silence_edges(self, audio:AudioSegment, silence_threshold = -42):
         non_silent_start_idx = silence.detect_leading_silence(audio, silence_threshold = silence_threshold)
@@ -255,6 +257,8 @@ if __name__ == "__main__":
     ref_text = 'A meaningful livelihood.'
     ref_audio = 'reference.wav'
     gen_text = 'Today is a good day.'
-    audio_segment, final_sample_rate, spectrogram = infer(ref_audio=ref_audio, ref_text=ref_text,
-                                                                    gen_text=gen_text)
+    with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, profile_memory=True) as prof:
+        audio_segment, final_sample_rate, spectrogram = infer(ref_audio=ref_audio, ref_text=ref_text,
+                                                                        gen_text=gen_text)
     sf.write('output.wav', audio_segment, final_sample_rate)
+    prof.export_chrome_trace('trace.json')

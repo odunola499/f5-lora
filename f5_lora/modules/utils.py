@@ -315,8 +315,12 @@ class MelSpec(nn.Module):
             self.to(wav.device)
 
         wav = self.preprocess(wav)
+        init_dtype = wav.dtype
+        print(f'initial dtype {init_dtype}')
+        wav = wav.half()
         with torch.no_grad():
             mel = self.extractor(wav)
+        mel = mel.to(dtype = init_dtype)
         mel = mel.clamp(min=1e-5).log()
         return mel
 
