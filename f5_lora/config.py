@@ -45,7 +45,7 @@ class InferenceConfig:
 @dataclass
 class TrainConfig:
     epochs:Optional[int] = None
-    learning_rate:float = 3e-4
+    learning_rate:float = 1e-4
     max_steps:Optional[int] = 20000
     warmup_steps:int = 2000
     keep_last_n_checkpoints:int = 2
@@ -53,7 +53,7 @@ class TrainConfig:
     pretrained_ckpt:Optional[str] = None
     resume_run:bool = True
     batch_size:int = 1
-    grad_accumulation_steps:Optional[int] = 2
+    grad_accumulation_steps:Optional[int] = 4
     max_grad_norm:int = 1.0
     noise_scheduler:Optional[str] = None
     log_to:Literal['wandb','csv'] = 'wandb'

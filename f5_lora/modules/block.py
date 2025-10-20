@@ -3,15 +3,12 @@ from torch import nn, Tensor
 from .utils import GRN, apply_rotary_pos_emb, RMSNorm
 from torch.nn import functional as F
 
-
-def is_flash_attn_available():
-    try:
-        from flash_attn.bert_padding import pad_input, unpad_input
-        from flash_attn import flash_attn_varlen_func, flash_attn_func
-        print('Using flash attn')
-        return True
-    except:
-        return False
+try:
+    from flash_attn.bert_padding import pad_input, unpad_input
+    from flash_attn import flash_attn_varlen_func, flash_attn_func
+    FLASH_ATTN_AVAILABLE = True
+except:
+    FLASH_ATTN_AVAILABLE = False
 
 
 
@@ -155,7 +152,7 @@ class AttnProcessor:
                 query = apply_rotary_pos_emb(query, freqs, q_xpos_scale)
                 key = apply_rotary_pos_emb(key, freqs, k_xpos_scale)
 
-        if is_flash_attn_available():
+        if FLASH_ATTN_AVAILABLE:
             query, key, value = query.transpose(1,2), key.transpose(1,2), value.transpose(1,2)
             if self.attn_mask_enabled and mask is not None:
                 query, indices, q_cu_seqlens, q_max_seqlen_in_batch, _ = unpad_input(query, mask)
@@ -176,16 +173,15 @@ class AttnProcessor:
                 x = flash_attn_func(query, key, value, dropout_p = 0.0, causal = False)
                 x = x.reshape(batch_size, -1, inner_dim)
 
-
-
-        if self.attn_mask_enabled and mask is not None:
-            attn_mask = mask.unsqueeze(1).unsqueeze(1)
-            attn_mask = attn_mask.expand(batch_size, attn.heads, query.shape[-2], key.shape[-2])
         else:
-            attn_mask = None # bidirectional attention
+            if self.attn_mask_enabled and mask is not None:
+                attn_mask = mask.unsqueeze(1).unsqueeze(1)
+                attn_mask = attn_mask.expand(batch_size, attn.heads, query.shape[-2], key.shape[-2])
+            else:
+                attn_mask = None # bidirectional attention
 
-        x = F.scaled_dot_product_attention(query, key, value, attn_mask = attn_mask, dropout_p = 0.0, is_causal=False)
-        x = x.transpose(1, 2).contiguous().view(batch_size, -1, inner_dim)
+            x = F.scaled_dot_product_attention(query, key, value, attn_mask = attn_mask, dropout_p = 0.0, is_causal=False)
+            x = x.transpose(1, 2).reshape(batch_size, -1, inner_dim)
 
         x = x.to(query.dtype)
         # linear proj
@@ -240,5 +236,6 @@ class DiTBlock(nn.Module):
         x = x + gate_mlp.unsqueeze(1) * ff_output
 
         return x
+
 
 

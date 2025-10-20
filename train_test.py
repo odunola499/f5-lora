@@ -2,12 +2,14 @@ from f5_lora.train import get_loader, TrainModule, train_model
 from f5_lora.config import Config, HFData
 
 config = Config()
-config.train.max_steps = 1000
-config.train.warmup_steps = 500
-config.train.batch_size = 4
+config.train.learning_rate = 1e-4
+config.train.max_steps = 3000
+config.train.warmup_steps = 300
+config.train.batch_size = 2
+config.train.grad_accumulation_steps=4
 
 train_data= HFData(
-    repo_id="toyrem/naija_english",
+    repo_id="vbrydik/eng-male-speaker-0-v1",
     name = None,
     split="train",
     text_column="text",

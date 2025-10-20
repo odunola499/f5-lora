@@ -69,7 +69,7 @@ class TrainModule(pl.LightningModule):
                 dtype=self.dtype,
                 load_pretrained=True,
                 ckpt_path=config.train.pretrained_ckpt,
-                use_ema=True
+                use_ema=False
             )
         else:
             model = load_model(
