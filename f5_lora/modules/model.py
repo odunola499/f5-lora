@@ -191,10 +191,9 @@ class CFM(nn.Module):
     def forward(
             self,
             inp,  # mel or raw wave
-            text,  # noqa: F722
+            text,
             *,
-            lens = None,  # noqa: F821
-            noise_scheduler: str | None = None,
+            lens = None,
     ):
         if inp.ndim == 2:
             inp = self.mel_spec(inp)

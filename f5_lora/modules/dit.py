@@ -20,9 +20,9 @@ class ConvPositionEmbedding(nn.Module):
             mask = mask[...,None]
             x = x.masked_fill(~mask, 0.0)
 
-        x = x.permute(0, 2, 1)
+        x = x.transpose(1,2).contiguous(memory_format=torch.channels_last)
         x = self.conv1d(x)
-        out = x.permute(0, 2, 1)
+        out = x.transpose(1,2).contiguous()
 
         if mask is not None:
             out = out.masked_fill(~mask, 0.0)
@@ -32,12 +32,13 @@ class SinusPositionEmbedding(nn.Module):
     def __init__(self, dim):
         super().__init__()
         self.dim = dim
-
-    def forward(self, x, scale=1000):
-        device = x.device
         half_dim = self.dim // 2
         emb = math.log(10000) / (half_dim - 1)
-        emb = torch.exp(torch.arange(half_dim, device=device).float() * -emb)
+        freq = torch.exp(torch.arange(half_dim).float() * -emb)
+        self.register_buffer('freq', freq, persistent = False)
+
+    def forward(self, x, scale=1000):
+        emb = self.freq
         emb = scale * x.unsqueeze(1) * emb.unsqueeze(0)
         emb = torch.cat((emb.sin(), emb.cos()), dim=-1)
         return emb
@@ -64,7 +65,10 @@ class InputEmbedding(nn.Module):
 
     def forward(self, x,cond, text_embed, drop_audio_cond = False):
         if drop_audio_cond:
-            cond = torch.zeros_like(cond)
+            if not self.training:
+                cond.zero_()
+            else:
+                cond = torch.zeros_like(cond)
 
         x = torch.cat((x, cond, text_embed), dim = -1)
         x = self.proj(x)
@@ -200,9 +204,8 @@ class DIT(nn.Module):
         if time.ndim == 0:
             time = time.repeat(batch)
 
-        # t: conditioning time, text: text, x: noised audio + cond audio + text
         t = self.time_embed(time)
-        if cfg_infer:  # pack cond & uncond forward: b n d -> 2b n d
+        if cfg_infer:
             x_cond = self.get_input_embed(
                 x, cond, text, drop_audio_cond=False, drop_text=False, cache=cache, audio_mask=mask
             )
