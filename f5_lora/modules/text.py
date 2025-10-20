@@ -137,4 +137,3 @@ class TextEmbedding(nn.Module):
             text = self.upsample_text_by_mask(text, ~text_mask, audio_mask)
 
         return text
-

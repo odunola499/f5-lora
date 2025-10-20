@@ -191,9 +191,10 @@ class CFM(nn.Module):
     def forward(
             self,
             inp,  # mel or raw wave
-            text,
+            text,  # noqa: F722
             *,
-            lens = None,
+            lens = None,  # noqa: F821
+            noise_scheduler: str | None = None,
     ):
         if inp.ndim == 2:
             inp = self.mel_spec(inp)
@@ -256,4 +257,3 @@ class CFM(nn.Module):
         loss = loss[rand_span_mask]
 
         return loss.mean(), cond, pred
-
