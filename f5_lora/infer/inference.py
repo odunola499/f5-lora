@@ -261,4 +261,4 @@ if __name__ == "__main__":
         audio_segment, final_sample_rate, spectrogram = infer(ref_audio=ref_audio, ref_text=ref_text,
                                                                         gen_text=gen_text)
     sf.write('output.wav', audio_segment, final_sample_rate)
-    prof.export_chrome_trace('trace.json')
+    print(prof.key_averages().table(sort_by="cpu_memory_usage", row_limit=10))
