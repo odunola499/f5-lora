@@ -14,17 +14,19 @@ from torch.profiler import profile, ProfilerActivity, record_function
 
 
 class Inference:
-    def __init__(self, config:Config, profile_model = False):
+    def __init__(self, config:Config, model:torch.nn.Module = None):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.model = load_model(
-            device = self.device,
-            use_ema=config.inference.use_ema,
-            config = config
-                        ).eval()
+        if not model:
+            model = load_model(
+                device = self.device,
+                use_ema=config.inference.use_ema,
+                config = config
+                            )
+        self.model = model.eval()
 
         self.vocoder = load_vocoder(device = self.device).eval()
         self.config = config
-        self.profile_model = profile_model
+
 
     def remove_silence_edges(self, audio:AudioSegment, silence_threshold = -42):
         non_silent_start_idx = silence.detect_leading_silence(audio, silence_threshold = silence_threshold)
@@ -144,6 +146,7 @@ class Inference:
             # inference
             with torch.inference_mode():
                 generated, _ = self.model.sample(
+        # Save only LoRA parameters
                     cond=audio,
                     text=final_text_list,
                     duration=duration,
@@ -153,7 +156,7 @@ class Inference:
                 )
                 del _
 
-                generated = generated.to(torch.float32)
+                generated = generated.to(dtype = torch.float32)
                 generated = generated[:, ref_audio_len:, :]
                 generated = generated.permute(0, 2, 1)
                 generated_wave = self.vocoder.decode(generated)

@@ -10,51 +10,44 @@ import lightning as pl
 from lightning.pytorch.callbacks import (
     LearningRateMonitor, ModelCheckpoint
 )
-from lightning.pytorch.loggers import WandbLogger, CSVLogger, CometLogger
+from lightning.pytorch.loggers import CSVLogger, CometLogger
 from ema_pytorch import EMA
 from .optimizer import OPTIMIZER_MAPPING, LR_SCHEDULER_MAPPING
 from f5_lora.config import Config
 from f5_lora.modules.commons import load_model, load_vocoder
 from safetensors.torch import save_file
+from f5_lora.modules.lora import LoraManager
 
 now_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 word = RandomWords().get_random_word()
 
 run_name = f"{now_str}_{word}"
 
-
-def save_checkpoint(directory, model, ema_model: EMA, optimizer, scheduler, step, save_n_files):
-    os.makedirs(directory, exist_ok=True)
-
-    state_dict = ema_model.state_dict()
-    flat_state_dict = {k: v for k, v in state_dict.items() if isinstance(v, torch.Tensor)}
-
-    filename = os.path.join(directory, f'model_{step}.safetensors')
-    last = os.path.join(directory, 'last.safetensors')
-
-    save_file(flat_state_dict, last)
-    save_file(flat_state_dict, filename)
-
-    print(f"Checkpoint saved at step {step} to {filename}")
-
-
 class TrainModule(pl.LightningModule):
     def __init__(
             self,
             config: Config,
             train_loader: DataLoader,
-            valid_loader: Optional[DataLoader] = None
+            valid_loader: Optional[DataLoader] = None,
+            lora:bool = False,
+            alpha:int = 8,
+            rank:int = 4,
     ):
         super().__init__()
         self.vocoder = None
         self.model = None
         self.ema_model = None
+
         self.config = config
         self.train_loader = train_loader
         self.valid_loader = valid_loader
+        self.lora = lora
+        self.alpha = alpha
+        self.rank = rank
 
     def configure_model(self):
         config = self.config
+
         if config.train.resume_run:
             model = load_model(
                 device=self.device,
@@ -74,11 +67,25 @@ class TrainModule(pl.LightningModule):
                 use_ema=True
             )
 
-        self.model = model.train()
-        self.model.transformer.text_embed.requires_grad_(False)
-        self.ema_model = EMA(model, include_online_model=False)
-        self.vocoder = load_vocoder(self.device)
-        self.vocoder.requires_grad_(False)
+        model.transformer.text_embed.requires_grad_(False)
+        ema_model = EMA(model, include_online_model=False)
+        vocoder = load_vocoder(self.device)
+        vocoder.requires_grad_(False)
+
+        if self.lora:
+            lora_manager = LoraManager(model)
+            lora_manager.prepare(
+                rank = self.rank,
+                alpha = self.alpha,
+                target_modules = None,
+                report = True
+            )
+            model = lora_manager.model
+            print("Initialized LoRA modules.")
+
+        self.model = model
+        self.ema_model = ema_model
+        self.vocoder = vocoder
 
     def configure_optimizers(self):
         optimizer_cls = OPTIMIZER_MAPPING.get(self.config.train.optimizer, None)
@@ -94,9 +101,30 @@ class TrainModule(pl.LightningModule):
         )
         return [optimizer], [{"scheduler": scheduler, "interval": "step"}]
 
-    def build_optim_groups(self):
-        # todo: build optimizer groups
-        pass
+    def save(self):
+        directory = self.config.train.ckpt_dir
+        save_n_files = self.config.train.keep_last_n_checkpoints
+        os.makedirs(directory, exist_ok=True)
+
+        state_dict = self.ema_model.state_dict()
+        if self.lora:
+            state_dict = {k: v for k, v in state_dict.items() if 'lora' in k.lower() and isinstance(v, torch.Tensor)}
+            state_dict['alpha'] = torch.tensor(self.alpha)
+            state_dict['rank'] = torch.tensor(self.rank)
+            filename = os.path.join(directory, f'adapter_{self.global_step}.safetensors')
+        else:
+            state_dict = {k: v for k, v in state_dict.items() if isinstance(v, torch.Tensor)}
+            filename = os.path.join(directory, f'model_{self.global_step}.safetensors')
+
+        save_file(state_dict, filename)
+        ckpts = sorted(
+            [os.path.join(directory, f) for f in os.listdir(directory) if f.startswith("model_")],
+            key=os.path.getmtime,
+        )
+        for ckpt in ckpts[:-save_n_files]:
+            os.remove(ckpt)
+
+        print(f"Saved checkpoint: {filename}")
 
     def train_dataloader(self):
         return self.train_loader
@@ -111,17 +139,14 @@ class TrainModule(pl.LightningModule):
         )
         self.log('train/loss', loss, prog_bar=True, sync_dist=True)
 
-        scheduler = self.trainer.lr_scheduler_configs[0].scheduler
-        if self.global_step % self.config.train.save_interval == 0 and self.trainer.is_global_zero and self.global_step > 0:
-            save_checkpoint(
-                directory=self.config.train.ckpt_path,
-                model=self.model,
-                ema_model=self.ema_model,
-                optimizer=self.trainer.optimizers[0],
-                scheduler=scheduler,
-                step=self.global_step,
-                save_n_files=self.config.train.keep_last_n_checkpoints
-            )
+        should_save = (
+                self.global_step > 0
+                and self.trainer.is_global_zero
+                and self.global_step % self.config.train.save_interval == 0
+        )
+        if should_save:
+            self.save()
+
         return loss
 
     def validation_step(self, batch):

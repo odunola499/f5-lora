@@ -40,7 +40,6 @@ modules = [
     'to_out.0'
 ]
 
-
 def _set_submodule(model, name, new_module):
     parts = name.split('.')
     parent = model

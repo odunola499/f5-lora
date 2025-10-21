@@ -49,7 +49,7 @@ class TrainConfig:
     max_steps:Optional[int] = 20000
     warmup_steps:int = 2000
     keep_last_n_checkpoints:int = 2
-    ckpt_path:str = 'checkpoints'
+    ckpt_dir:str = 'checkpoints'
     pretrained_ckpt:Optional[str] = None
     resume_run:bool = True
     batch_size:int = 1

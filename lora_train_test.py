@@ -1,6 +1,5 @@
 from f5_lora.train import get_loader, TrainModule, train_model
 from f5_lora.config import Config, HFData
-from f5_lora.modules.lora import LoraManager
 from datasets import load_dataset
 
 import soundfile as sf
@@ -21,7 +20,7 @@ config.train.save_interval = 50
 config.train.grad_accumulation_steps=4
 
 train_data= HFData(
-    repo_id="ylacombe/expresso",
+    repo_id='odunola/expresso-whisper',
     name = None,
     split="train",
     text_column="text",
@@ -34,17 +33,8 @@ for batch in train_loader:
     print(batch['mel_lengths'])
     break
 
-train_module = TrainModule(config, train_loader)
-model = train_module.model
-lora_manager = LoraManager(model)
+train_module = TrainModule(config, train_loader, lora = True)
 
-lora_manager.prepare(
-    rank=4,
-    alpha=8,
-    target_modules=None,
-    report=True
-)
-train_module.model = lora_manager.model
 print("Initialized LoRA modules.")
-print(sum([p.numel() for p in train_module.parameters() if p.requires_grad]))
+
 train_model(config = config, train_module = train_module)

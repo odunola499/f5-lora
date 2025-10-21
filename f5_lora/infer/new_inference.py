@@ -10,7 +10,6 @@ from f5_lora.modules.utils import chunk_text
 from torch.profiler import profile, ProfilerActivity
 
 
-
 class Inference:
     def __init__(self, config:Config):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -22,19 +21,6 @@ class Inference:
 
         self.vocoder = load_vocoder(device=self.device).eval()
         self.config = config
-
-    def remove_silence_edges(self, audio:AudioSegment, silence_threshold = -42):
-        non_silent_start_idx = silence.detect_leading_silence(audio, silence_threshold = silence_threshold)
-        audio = audio[non_silent_start_idx:]
-
-        non_silent_end_duration = audio.duration_seconds
-        for ms in reversed(audio):
-            if ms.dBFS < silence_threshold:
-                non_silent_end_duration -= 1
-            non_silent_end_duration -= 0.001
-
-        trimmed_audio = audio[: int(non_silent_end_duration * 1000)]
-        return trimmed_audio
 
     def preprocess_ref_audio_text(self, ref_audio_path:str, max_duration = 12.0):
         info = torchaudio.info(ref_audio_path)
