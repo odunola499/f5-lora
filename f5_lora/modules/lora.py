@@ -16,6 +16,8 @@ class LoraLinear(nn.Module):
         self.lora_B = nn.Parameter(torch.zeros(layer.out_features, r))
 
         self.base.requires_grad_(False)
+        #self.lora_A.requires_grad_(True)
+        #self.lora_B.requires_grad_(True)
 
     def forward(self, x):
         output = self.base(x)
@@ -72,12 +74,13 @@ class LoraManager:
 
         for name, module in self.model.named_modules():
             if any(t in name for t in target_modules) and isinstance(module, nn.Linear):
+                print(f'Applying LoRA to module: {name} | {module}')
                 lora_module = LoraLinear(module, rank, alpha)
                 _set_submodule(self.model, name,lora_module)
-            if report or self.model.training:
-                total = sum([p.numel() for p in module.parameters()])
-                trainable = sum(p.numel() for p in module.parameters() if p.requires_grad)
-                print(f"LoRA params: {trainable}/{total} ({trainable / total * 100:.3f}%)")
+        if report or self.model.training:
+            total = sum([p.numel() for p in self.model.parameters()])
+            trainable = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+            print(f"LoRA params: {trainable}/{total} ({trainable / total * 100:.3f}%)")
 
     def reset(self):
         for name, module in self.model.named_modules():
@@ -126,7 +129,6 @@ class LoraManager:
         else:
             print(f'No LoRA adapter named {name} found.')
 
-
 """
 manager = LoraManager(model)
 manager.prepare(rank=4, alpha=8, target_modules=["to_q", "to_v", "proj_out"])
@@ -135,13 +137,3 @@ manager.load("adapter.safetensors", name="base")
 manager.swap("base")
 manager.reset()
 """
-
-
-
-
-
-
-
-
-
-

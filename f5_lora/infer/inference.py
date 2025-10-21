@@ -251,14 +251,15 @@ class Inference:
 
 if __name__ == "__main__":
     config = Config()
+    config.ckpt_path = '/root/f5-tts/checkpoints/model_400.safetensors'
     infer = Inference(config)
     print('Loaded')
 
-    ref_text = 'A meaningful livelihood.'
-    ref_audio = 'reference.wav'
-    gen_text = 'Today is a good day.'
+    ref_text = "Monday, there's gonna be haze, but Tuesday, look for thunderstorms."
+    ref_audio = 'sample.wav'
+    gen_text = 'Can I get a quick shoutout to all friends that love good food and making money? If you are one of them, then you are at the right place.'
     with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, profile_memory=True) as prof:
         audio_segment, final_sample_rate, spectrogram = infer(ref_audio=ref_audio, ref_text=ref_text,
                                                                         gen_text=gen_text)
     sf.write('output.wav', audio_segment, final_sample_rate)
-    print(prof.key_averages().table(sort_by="cpu_memory_usage", row_limit=10))
+    #print(prof.key_averages().table(sort_by="cpu_memory_usage", row_limit=10))

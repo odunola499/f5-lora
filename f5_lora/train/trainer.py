@@ -192,13 +192,12 @@ def train_model(config: Config, train_module: TrainModule):
     if config.train.log_to == 'wandb':
         wandb_logger = CometLogger(
             project_name=config.train.wandb_project,
-            experiment_name =config.train.wandb_run_name or run_name
-            #name=config.train.wandb_run_name or run_name,
+            experiment_name=config.train.wandb_run_name or run_name
 
         )
         logger = wandb_logger
     else:
-        logger = CSVLogger(save_dir = 'train_checkpoints')
+        logger = CSVLogger(save_dir='train_checkpoints')
     checkpoint = ModelCheckpoint(
         'train_checkpoints',
         monitor='train/loss',
@@ -209,7 +208,7 @@ def train_model(config: Config, train_module: TrainModule):
     callbacks.append(checkpoint)
 
     trainer = pl.Trainer(
-        logger=logger,
+        # logger=logger,
         callbacks=callbacks,
         max_epochs=config.train.epochs,
         max_steps=config.train.max_steps,

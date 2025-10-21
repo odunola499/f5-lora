@@ -1,10 +1,13 @@
 from f5_lora.train import get_loader, TrainModule, train_model
 from f5_lora.config import Config, HFData
 from datasets import load_dataset
+import time
 
 import soundfile as sf
-data = load_dataset('babs/Kinglsey-audiobook')['train']
-sf.write('sample.wav', data[0]['audio']['array'], data[0]['audio']['sampling_rate'])
+#data = load_dataset('ylacombe/expresso')['train']
+#sf.write('sample.wav', data[2]['audio']['array'], data[2]['audio']['sampling_rate'])
+#print(data[2]['text'])
+#time.sleep(5)
 
 
 config = Config()
@@ -16,7 +19,7 @@ config.train.save_interval = 50
 config.train.grad_accumulation_steps=4
 
 train_data= HFData(
-    repo_id="babs/Kinglsey-audiobook",
+    repo_id="ylacombe/expresso",
     name = None,
     split="train",
     text_column="text",
