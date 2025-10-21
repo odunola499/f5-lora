@@ -1,5 +1,10 @@
 from f5_lora.train import get_loader, TrainModule, train_model
 from f5_lora.config import Config, HFData
+from datasets import load_dataset
+
+import soundfile as sf
+data = load_dataset('babs/Kinglsey-audiobook')['train']
+sf.write('sample.wav', data[0]['audio']['array'], data[0]['audio']['sampling_rate'])
 
 
 config = Config()
