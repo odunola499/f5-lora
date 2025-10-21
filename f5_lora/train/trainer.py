@@ -10,7 +10,7 @@ import lightning as pl
 from lightning.pytorch.callbacks import (
     LearningRateMonitor, ModelCheckpoint
 )
-from lightning.pytorch.loggers import WandbLogger, CSVLogger
+from lightning.pytorch.loggers import WandbLogger, CSVLogger, CometLogger
 from ema_pytorch import EMA
 from .optimizer import OPTIMIZER_MAPPING, LR_SCHEDULER_MAPPING
 from f5_lora.config import Config
@@ -32,15 +32,8 @@ def save_checkpoint(directory, model, ema_model: EMA, optimizer, scheduler, step
     filename = os.path.join(directory, f'model_{step}.safetensors')
     last = os.path.join(directory, 'last.safetensors')
 
-    if os.path.exists(last):
-        os.remove(last)
     save_file(flat_state_dict, last)
     save_file(flat_state_dict, filename)
-
-    files = sorted(os.listdir(directory))
-    if len(files) > save_n_files:
-        for f in files[:-save_n_files]:
-            os.remove(os.path.join(directory, f))
 
     print(f"Checkpoint saved at step {step} to {filename}")
 
@@ -69,7 +62,7 @@ class TrainModule(pl.LightningModule):
                 dtype=self.dtype,
                 load_pretrained=True,
                 ckpt_path=config.train.pretrained_ckpt,
-                use_ema=False
+                use_ema=True
             )
         else:
             model = load_model(
@@ -78,10 +71,11 @@ class TrainModule(pl.LightningModule):
                 dtype=self.dtype,
                 load_pretrained=False,
                 ckpt_path=None,
-                use_ema=False
+                use_ema=True
             )
 
-        self.model = model
+        self.model = model.train()
+        self.model.transformer.text_embed.requires_grad_(False)
         self.ema_model = EMA(model, include_online_model=False)
         self.vocoder = load_vocoder(self.device)
         self.vocoder.requires_grad_(False)
@@ -118,7 +112,7 @@ class TrainModule(pl.LightningModule):
         self.log('train/loss', loss, prog_bar=True, sync_dist=True)
 
         scheduler = self.trainer.lr_scheduler_configs[0].scheduler
-        if self.global_step % self.config.train.save_interval == 0 and self.trainer.is_global_zero:
+        if self.global_step % self.config.train.save_interval == 0 and self.trainer.is_global_zero and self.global_step > 0:
             save_checkpoint(
                 directory=self.config.train.ckpt_path,
                 model=self.model,
@@ -196,10 +190,11 @@ def train_model(config: Config, train_module: TrainModule):
         callbacks.append(lr_monitor)
 
     if config.train.log_to == 'wandb':
-        wandb_logger = WandbLogger(
-            project=config.train.wandb_project,
-            name=config.train.wandb_run_name or run_name,
-            log_model=False
+        wandb_logger = CometLogger(
+            project_name=config.train.wandb_project,
+            experiment_name =config.train.wandb_run_name or run_name
+            #name=config.train.wandb_run_name or run_name,
+
         )
         logger = wandb_logger
     else:
@@ -214,12 +209,13 @@ def train_model(config: Config, train_module: TrainModule):
     callbacks.append(checkpoint)
 
     trainer = pl.Trainer(
-        # logger=logger,
+        logger=logger,
         callbacks=callbacks,
         max_epochs=config.train.epochs,
         max_steps=config.train.max_steps,
         accumulate_grad_batches=config.train.grad_accumulation_steps or 1,
         gradient_clip_val=config.train.max_grad_norm or 0.0,
+        log_every_n_steps=4,
         accelerator="auto",
         devices="auto",
         precision='bf16-mixed' if torch.cuda.is_available() else 32,
