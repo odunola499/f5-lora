@@ -60,11 +60,16 @@ class LoraManager:
         self.target_modules = None
         self.adapters = {}
         self.active = None
+        self.MODULES = modules
 
     def prepare(self, rank = 4, alpha = 8, target_modules = None, report = True):
         self.rank = rank
         self.alpha = alpha
+
+        if target_modules is None:
+            target_modules = self.MODULES
         self.target_modules = target_modules
+
         for name, module in self.model.named_modules():
             if any(t in name for t in target_modules) and isinstance(module, nn.Linear):
                 lora_module = LoraLinear(module, rank, alpha)
@@ -94,8 +99,10 @@ class LoraManager:
             state_dict = {k: fp.get_tensor(k) for k in fp.keys()}
             alpha = state_dict.pop('alpha').item()
             rank = state_dict.pop('rank').item()
+
         if self.alpha != alpha or self.rank != rank:
             self.prepare(rank = rank, alpha = alpha, target_modules = self.target_modules or [])
+
         self.model.load_state_dict(state_dict, strict = False)
         if name:
             self.adapters[name] = state_dict
