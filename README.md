@@ -1,6 +1,6 @@
 # F5-LoRA: Efficient Low-Rank Adaptation for Flow-Matching TTS
 
-This repository extends the F5-TTS (A Fairytaler that Fakes Fluent and Faithful Speech with Flow Matching) model with easy support for LoRA and full parameter finetuning. This allows for easy lightweight style transfer and voice cloning.
+This repository extends the F5-TTS (A Fairytaler that Fakes Fluent and Faithful Speech with Flow Matching) model repo code with easy support for LoRA and full parameter finetuning. This allows for easy lightweight style transfer and voice cloning.
 
 Check out the sample files in the tutorial/ repo for quckstart examples.
 
