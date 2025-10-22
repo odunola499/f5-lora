@@ -73,7 +73,6 @@ class TrainModule(pl.LightningModule):
             lora_manager.prepare(
                 rank=self.rank,
                 alpha=self.alpha,
-                target_modules=None,
                 report=True
             )
             model = lora_manager.model

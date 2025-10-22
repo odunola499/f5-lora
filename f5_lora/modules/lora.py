@@ -12,12 +12,15 @@ class LoraLinear(nn.Module):
         self.base = copy.deepcopy(layer)
         self.scale = alpha / r
 
-        self.lora_A = nn.Parameter(torch.randn(r, layer.in_features) * 0.01)
-        self.lora_B = nn.Parameter(torch.zeros(layer.out_features, r))
+        dtype = layer.weight.dtype
+        device = layer.weight.device
+
+        self.lora_A = nn.Parameter(torch.randn(r, layer.in_features, dtype = dtype, device = device))
+        self.lora_B = nn.Parameter(torch.zeros(layer.out_features, r, dtype = dtype, device = device))
+        nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
+        self.lora_A.data *= 0.01
 
         self.base.requires_grad_(False)
-        #self.lora_A.requires_grad_(True)
-        #self.lora_B.requires_grad_(True)
 
     def forward(self, x):
         output = self.base(x)
@@ -38,7 +41,7 @@ modules = [
     'to_k',
     'to_v',
     'ff.2',
-    'ff.0.0'
+    '0.0'
     'to_out.0'
 ]
 
@@ -60,21 +63,16 @@ class LoraManager:
         self.model.requires_grad_(False)
         self.alpha = None
         self.rank = None
-        self.target_modules = None
         self.adapters = {}
         self.active = None
         self.MODULES = modules
 
-    def prepare(self, rank = 4, alpha = 8, target_modules = None, report = True):
+    def prepare(self, rank = 4, alpha = 8, report = True):
         self.rank = rank
         self.alpha = alpha
 
-        if target_modules is None:
-            target_modules = self.MODULES
-        self.target_modules = target_modules
-
         for name, module in self.model.named_modules():
-            if any(t in name for t in target_modules) and isinstance(module, nn.Linear):
+            if isinstance(module, nn.Linear):
                 print(f'Applying LoRA to module: {name} | {module}')
                 lora_module = LoraLinear(module, rank, alpha)
                 _set_submodule(self.model, name,lora_module)
@@ -87,7 +85,7 @@ class LoraManager:
         for name, module in self.model.named_modules():
             if isinstance(module, LoraLinear):
                 _set_submodule(self.model, name, module.base)
-        self.alpha = self.rank = self.target_modules = None
+        self.alpha = self.rank = None
         print('LoRA adapters removed.')
 
 
@@ -130,11 +128,4 @@ class LoraManager:
         else:
             print(f'No LoRA adapter named {name} found.')
 
-"""
-manager = LoraManager(model)
-manager.prepare(rank=4, alpha=8, target_modules=["to_q", "to_v", "proj_out"])
-manager.save("adapter.safetensors")
-manager.load("adapter.safetensors", name="base")
-manager.swap("base")
-manager.reset()
-"""
+
