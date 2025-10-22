@@ -56,7 +56,7 @@ class TrainConfig:
     grad_accumulation_steps:Optional[int] = 4
     max_grad_norm:int = 1.0
     noise_scheduler:Optional[str] = None
-    log_to:Literal['wandb','csv'] = 'wandb'
+    log_to:Literal['wandb','csv'] = 'comet'
     wandb_project:str = 'F5_TTS'
     wandb_run_name:Optional[str] = None
     log_samples:bool = True

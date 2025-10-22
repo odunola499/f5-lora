@@ -23,15 +23,16 @@ word = RandomWords().get_random_word()
 
 run_name = f"{now_str}_{word}"
 
+
 class TrainModule(pl.LightningModule):
     def __init__(
             self,
             config: Config,
             train_loader: DataLoader,
             valid_loader: Optional[DataLoader] = None,
-            lora:bool = False,
-            alpha:int = 8,
-            rank:int = 4,
+            lora: bool = False,
+            alpha: int = 8,
+            rank: int = 4,
     ):
         super().__init__()
         self.vocoder = None
@@ -67,21 +68,21 @@ class TrainModule(pl.LightningModule):
                 use_ema=True
             )
 
+        if self.lora:
+            lora_manager = LoraManager(model)
+            lora_manager.prepare(
+                rank=self.rank,
+                alpha=self.alpha,
+                target_modules=None,
+                report=True
+            )
+            model = lora_manager.model
+            print("Initialized LoRA modules.")
+
         model.transformer.text_embed.requires_grad_(False)
         ema_model = EMA(model, include_online_model=False)
         vocoder = load_vocoder(self.device)
         vocoder.requires_grad_(False)
-
-        if self.lora:
-            lora_manager = LoraManager(model)
-            lora_manager.prepare(
-                rank = self.rank,
-                alpha = self.alpha,
-                target_modules = None,
-                report = True
-            )
-            model = lora_manager.model
-            print("Initialized LoRA modules.")
 
         self.model = model
         self.ema_model = ema_model
@@ -118,7 +119,8 @@ class TrainModule(pl.LightningModule):
 
         save_file(state_dict, filename)
         ckpts = sorted(
-            [os.path.join(directory, f) for f in os.listdir(directory) if f.startswith("model_")],
+            [os.path.join(directory, f) for f in os.listdir(directory) if
+             f.startswith("model_") or f.startswith("adapter_")],
             key=os.path.getmtime,
         )
         for ckpt in ckpts[:-save_n_files]:
@@ -214,13 +216,12 @@ def train_model(config: Config, train_module: TrainModule):
         lr_monitor = LearningRateMonitor(logging_interval='step')
         callbacks.append(lr_monitor)
 
-    if config.train.log_to == 'wandb':
-        wandb_logger = CometLogger(
+    if config.train.log_to == 'comet':
+        logger = CometLogger(
             project_name=config.train.wandb_project,
             experiment_name=config.train.wandb_run_name or run_name
 
         )
-        logger = wandb_logger
     else:
         logger = CSVLogger(save_dir='train_checkpoints')
     checkpoint = ModelCheckpoint(
@@ -233,7 +234,7 @@ def train_model(config: Config, train_module: TrainModule):
     callbacks.append(checkpoint)
 
     trainer = pl.Trainer(
-        # logger=logger,
+        logger=logger,
         callbacks=callbacks,
         max_epochs=config.train.epochs,
         max_steps=config.train.max_steps,

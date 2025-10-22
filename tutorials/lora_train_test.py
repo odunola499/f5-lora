@@ -4,12 +4,6 @@ from datasets import load_dataset
 
 import soundfile as sf
 
-data = load_dataset('ylacombe/expresso')['train']
-whisper = data.filter(lambda row: row['style' == 'whisper'])
-whisper.push_to_hub('odunola/expresso-whisper')
-
-confusion = data.filter(lambda row: row['style' == 'confusion'])
-confusion.push_to_hub('odunola/expresso-confusion')
 
 config = Config()
 config.train.learning_rate = 1e-5

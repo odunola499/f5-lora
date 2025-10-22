@@ -14,5 +14,5 @@ wandb
 soundfile
 bitsandbytes
 random_word
-datasets
+datasets==2.21.0
 comet-ml
