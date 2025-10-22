@@ -22,6 +22,7 @@ class LoraLinear(nn.Module):
     def forward(self, x):
         output = self.base(x)
         delta = (self.lora_B @ self.lora_A) * self.scale
+        delta = delta.to(dtype = x.dtype, device = x.device)
         lora_out = torch.nn.functional.linear(x, delta)
         return output + lora_out
 
@@ -36,7 +37,8 @@ modules = [
     'to_q',
     'to_k',
     'to_v',
-    'ff.2'
+    'ff.2',
+    'ff.0.0'
     'to_out.0'
 ]
 
@@ -103,7 +105,7 @@ class LoraManager:
             rank = state_dict.pop('rank').item()
 
         if self.alpha != alpha or self.rank != rank:
-            self.prepare(rank = rank, alpha = alpha, target_modules = self.target_modules or [])
+            self.prepare(rank = rank, alpha = alpha)
 
         self.model.load_state_dict(state_dict, strict = False)
         if name:

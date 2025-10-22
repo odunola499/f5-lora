@@ -31,8 +31,8 @@ class TrainModule(pl.LightningModule):
             train_loader: DataLoader,
             valid_loader: Optional[DataLoader] = None,
             lora: bool = False,
-            alpha: int = 8,
-            rank: int = 4,
+            alpha: int = 64,
+            rank: int = 32,
     ):
         super().__init__()
         self.vocoder = None
@@ -78,8 +78,9 @@ class TrainModule(pl.LightningModule):
             )
             model = lora_manager.model
             print("Initialized LoRA modules.")
+        else:
+            model.transformer.text_embed.requires_grad_(False)
 
-        model.transformer.text_embed.requires_grad_(False)
         ema_model = EMA(model, include_online_model=False)
         vocoder = load_vocoder(self.device)
         vocoder.requires_grad_(False)
@@ -216,12 +217,13 @@ def train_model(config: Config, train_module: TrainModule):
         lr_monitor = LearningRateMonitor(logging_interval='step')
         callbacks.append(lr_monitor)
 
-    if config.train.log_to == 'comet':
-        logger = CometLogger(
+    if config.train.log_to == 'wandb':
+        wandb_logger = CometLogger(
             project_name=config.train.wandb_project,
             experiment_name=config.train.wandb_run_name or run_name
 
         )
+        logger = wandb_logger
     else:
         logger = CSVLogger(save_dir='train_checkpoints')
     checkpoint = ModelCheckpoint(

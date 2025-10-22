@@ -1,7 +1,13 @@
 # F5-LoRA: Efficient Low-Rank Adaptation for Flow-Matching TTS
 
-This repository extends the F5-TTS (Flow-Matching Text-to-Speech) model with support for LoRA and full parameter finetuning. 
+This repository extends the F5-TTS (Flow-Matching Text-to-Speech) model with easy support for LoRA and full parameter finetuning. This allows for easy lightweight style transfer and voice cloning.
+
 Check out the sample files in the tutorial/ repo for quckstart examples.
+
+
+[▶️ Before Lora Finetune Click to listen](./samples/before_finetune.wav)
+
+[▶️ After Lora Finetune](./samples/after_finetune.wav)
 ## Features
 
 - **LoRA Fine-tuning**: Efficient adaptation using Low-Rank matrices
@@ -175,15 +181,15 @@ manager.load("calm_style.safetensors", name="calm")
 
 # Swap between adapters during inference
 manager.swap("whisper")  # Switch to whisper style
-# ... generate audio ...
 
 manager.swap("excited")  # Switch to excited style
-# ... generate audio ...
 
 # Delete an adapter
 manager.delete("calm")
 ```
-
+### Notes
+- I set `alpha` to 32 and `rank` to 4 as default values as this showed the best performance in my tests, but these can be adjusted based on your requirements.
+- Do tinker with the default LoRA target modules as well. You may get more impressive results.
 
 ## Acknowledgments
 
