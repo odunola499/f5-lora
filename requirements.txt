@@ -1,14 +1,18 @@
-# Core PyTorch dependencies
-torch
-torchaudio
+torch==2.7.0
+torchaudio==2.7.0
 torchdiffeq
-
+torchcodec
 numpy
 einops
-
 librosa
 pydub
 vocos
-
+ema_pytorch
 transformers
 lightning
+wandb
+soundfile
+bitsandbytes
+random_word
+datasets==2.21.0
+comet-ml

@@ -3,8 +3,9 @@ from torch.nn import functional as F
 from torch import nn, Tensor
 from torch.nn.utils.rnn import pad_sequence
 from torchdiffeq import odeint
-from utils import get_epss_timesteps, lens_to_mask, list_str_to_idx, list_str_to_tensor, mask_from_frac_lengths, MelSpec
+from .utils import get_epss_timesteps, lens_to_mask, list_str_to_idx, list_str_to_tensor, mask_from_frac_lengths, MelSpec
 from random import random
+from .lora import LoraManager
 
 
 class CFM(nn.Module):
@@ -14,10 +15,8 @@ class CFM(nn.Module):
                  odeint_kwargs=None,
                  audio_drop_prob = 0.3,
                  cond_drop_prob = 0.2,
-                 num_channels = None,
-                 mel_spec_module = None,
                  mel_spec_kwargs=None,
-                 frac_lengths_mask = (0.7, 0.1),
+                 frac_lengths_mask = (0.1, 0.7),
                  vocab_char_map = None):
 
         super().__init__()
@@ -66,7 +65,6 @@ class CFM(nn.Module):
             edit_mask=None,
     ):
         self.eval()
-        # raw wave
 
         if cond.ndim == 2:
             cond = self.mel_spec(cond)
@@ -80,16 +78,12 @@ class CFM(nn.Module):
         if not lens:
             lens = torch.full((batch,), cond_seq_len, device=device, dtype=torch.long)
 
-        # text
-
         if isinstance(text, list):
             if self.vocab_char_map:
                 text = list_str_to_idx(text, self.vocab_char_map).to(device)
             else:
                 text = list_str_to_tensor(text).to(device)
             assert text.shape[0] == batch
-
-        # duration
 
         cond_mask = lens_to_mask(lens)
         if edit_mask is not None:
@@ -100,7 +94,7 @@ class CFM(nn.Module):
 
         duration = torch.maximum(
             torch.maximum((text != -1).sum(dim=-1), lens) + 1, duration
-        )  # duration at least text/audio prompt length plus one token, so something is generated
+        )
         duration = duration.clamp(max=max_duration)
         max_duration = duration.amax()
 
@@ -196,13 +190,12 @@ class CFM(nn.Module):
 
     def forward(
             self,
-            inp,  # mel or raw wave  # noqa: F722
+            inp,  # mel or raw wave
             text,  # noqa: F722
             *,
             lens = None,  # noqa: F821
             noise_scheduler: str | None = None,
     ):
-        # handle raw wave
         if inp.ndim == 2:
             inp = self.mel_spec(inp)
             inp = inp.permute(0, 2, 1)
@@ -212,8 +205,6 @@ class CFM(nn.Module):
         dtype = inp.dtype
         device = inp.device
 
-
-        # handle text as string
         if isinstance(text, list):
             if self.vocab_char_map:
                 text = list_str_to_idx(text, self.vocab_char_map).to(device)
@@ -221,17 +212,15 @@ class CFM(nn.Module):
                 text = list_str_to_tensor(text).to(device)
             assert text.shape[0] == batch
 
-        # lens and mask
-        if not lens:
+        if lens is None:
             lens = torch.full((batch,), seq_len, device=device)
 
-        mask = lens_to_mask(lens, length=seq_len)  # useless here, as collate_fn will pad to max length in batch
+        mask = lens_to_mask(lens, length=seq_len)
 
-        # get a random span to mask out for training conditionally
         frac_lengths = torch.zeros((batch,), device=self.device).float().uniform_(*self.frac_lengths_mask)
         rand_span_mask = mask_from_frac_lengths(lens, frac_lengths)
 
-        if mask:
+        if mask is not None:
             rand_span_mask &= mask
 
         # mel is x1
@@ -242,11 +231,10 @@ class CFM(nn.Module):
 
         # time step
         time = torch.rand((batch,), dtype=dtype, device=self.device)
-        # TODO. noise_scheduler
 
         # sample xt (φ_t(x) in the paper)
         t = time.unsqueeze(-1).unsqueeze(-1)
-        φ = (1 - t) * x0 + t * x1
+        x_t = (1 - t) * x0 + t * x1
         flow = x1 - x0
 
         # only predict what is within the random mask span for infilling
@@ -260,9 +248,8 @@ class CFM(nn.Module):
         else:
             drop_text = False
 
-        # apply mask will use more memory; might adjust batchsize or batchsampler long sequence threshold
         pred = self.transformer(
-            x=φ, cond=cond, text=text, time=time, drop_audio_cond=drop_audio_cond, drop_text=drop_text, mask=mask
+            x=x_t, cond=cond, text=text, time=time, drop_audio_cond=drop_audio_cond, drop_text=drop_text, mask=mask
         )
 
         # flow matching loss
@@ -270,62 +257,3 @@ class CFM(nn.Module):
         loss = loss[rand_span_mask]
 
         return loss.mean(), cond, pred
-
-def get_tokenizer(vocab_file):
-    with open(vocab_file, 'r', encoding='utf-8') as f:
-        vocab_char_map = {}
-        for i, char in enumerate(f):
-            vocab_char_map[char[:-1]] = i
-    vocab_size = len(vocab_char_map)
-    return vocab_char_map, vocab_size
-
-
-if __name__ == "__main__":
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    target_sample_rate = 24000
-    n_mel_channels = 100
-    hop_length = 256
-    win_length = 1024
-    n_fft = 1024
-    mel_spec_type = "vocos"
-    target_rms = 0.1
-    cross_fade_duration = 0.15
-    ode_method = "euler"
-    nfe_step = 32  # 16, 32
-    cfg_strength = 2.0
-    sway_sampling_coef = -1.0
-    speed = 1.0
-    fix_duration = None
-
-
-    from dit import DIT
-    config = {
-        'dim':1024,
-        'depth':22,
-        'heads':16,
-        'ff_mult':2,
-        'text_dim':512,
-        'conv_layers':4
-    }
-    vocab_char_map, vocab_size = get_tokenizer('vocab.txt')
-    model = CFM(
-        transformer = DIT(**config, text_num_embeds=vocab_size, mel_dim=n_mel_channels),
-        mel_spec_kwargs=dict(
-            n_fft=n_fft,
-            hop_length=hop_length,
-            win_length=win_length,
-            n_mel_channels=n_mel_channels,
-            target_sample_rate=target_sample_rate,
-            mel_spec_type=mel_spec_type,
-        ),
-        odeint_kwargs=dict(
-            method=ode_method,
-        ),
-        vocab_char_map=vocab_char_map,
-    ).to(device)
-
-    params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Model parameters: {params/1e6:.2f}M")
-
-

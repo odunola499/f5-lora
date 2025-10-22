@@ -1,6 +1,6 @@
 import torch
 from torch import nn, Tensor
-from utils import GRN
+from .utils import GRN
 from torch.nn import functional as F
 
 def get_pos_embed_indices(start, length, max_pos, scale=1.0):
@@ -79,7 +79,7 @@ class TextEmbedding(nn.Module):
         audio_lens = audio_mask.sum(dim = 1)
         valid_lens = valid_mask.sum(dim = 1)
 
-        upsampled_text = torch.zeros_like(text) #likely bug
+        upsampled_text = torch.zeros_like(text)
 
         for i in range(batch_size):
             audio_len = audio_lens[i].item()
@@ -137,4 +137,3 @@ class TextEmbedding(nn.Module):
             text = self.upsample_text_by_mask(text, ~text_mask, audio_mask)
 
         return text
-

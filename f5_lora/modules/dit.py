@@ -1,10 +1,9 @@
 import torch
 import math
-from torch.nn import functional as F
 from torch import nn, Tensor
-from text import TextEmbedding
-from utils import RotaryEmbedding
-from block import DiTBlock, AdaLayerNorm_Final
+from .text import TextEmbedding
+from .utils import RotaryEmbedding
+from .block import DiTBlock, AdaLayerNorm_Final
 
 class ConvPositionEmbedding(nn.Module):
     def __init__(self, dim, kernel_size = 31, groups = 16):
@@ -170,13 +169,11 @@ class DIT(nn.Module):
         seq_len = x.shape[1]
         if cache:
             if drop_text:
-                if self.text_uncond is None:
-                    self.text_uncond = self.text_embed(text, seq_len, drop_text=True, audio_mask=audio_mask)
-                text_embed = self.text_uncond
+                text_embed = self.text_embed(text, seq_len, drop_text=True, audio_mask=audio_mask)
+                self.text_uncond = text_embed
             else:
-                if self.text_cond is None:
-                    self.text_cond = self.text_embed(text, seq_len, drop_text=False, audio_mask=audio_mask)
-                text_embed = self.text_cond
+                text_embed = self.text_embed(text, seq_len, drop_text=False, audio_mask=audio_mask)
+                self.text_cond = text_embed
         else:
             text_embed = self.text_embed(text, seq_len, drop_text=drop_text, audio_mask=audio_mask)
 
@@ -199,7 +196,7 @@ class DIT(nn.Module):
         cfg_infer: bool = False,  # cfg inference, pack cond & uncond forward
         cache: bool = False,
     ):
-        batch, seq_len = x.shape[0], x.shape[1]
+        batch, seq_len = x.shape[:2]
         if time.ndim == 0:
             time = time.repeat(batch)
 
@@ -236,5 +233,4 @@ class DIT(nn.Module):
         output = self.proj_out(x)
 
         return output
-
 

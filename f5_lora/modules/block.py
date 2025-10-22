@@ -1,7 +1,15 @@
 import torch
 from torch import nn, Tensor
-from utils import GRN, apply_rotary_pos_emb
+from .utils import GRN, apply_rotary_pos_emb, RMSNorm
 from torch.nn import functional as F
+
+try:
+    from flash_attn.bert_padding import pad_input, unpad_input
+    from flash_attn import flash_attn_varlen_func, flash_attn_func
+    FLASH_ATTN_AVAILABLE = True
+except:
+    FLASH_ATTN_AVAILABLE = False
+
 
 
 class AdaLayerNorm(nn.Module):
@@ -80,7 +88,7 @@ class Attention(nn.Module):
             self.k_norm = None
 
         elif qk_norm == 'rms_norm':
-            from utils import RMSNorm
+
 
             self.q_norm = RMSNorm(dim_head, eps = 1e-6)
             self.k_norm = RMSNorm(dim_head, eps = 1e-6)
@@ -144,15 +152,36 @@ class AttnProcessor:
                 query = apply_rotary_pos_emb(query, freqs, q_xpos_scale)
                 key = apply_rotary_pos_emb(key, freqs, k_xpos_scale)
 
-        if self.attn_mask_enabled and mask is not None:
-            attn_mask = mask
-            attn_mask = attn_mask.unsqueeze(1).unsqueeze(1)  # 'b n -> b 1 1 n'
-            attn_mask = attn_mask.expand(batch_size, attn.heads, query.shape[-2], key.shape[-2])
-        else:
-            attn_mask = None # bidirectional attention
+        if FLASH_ATTN_AVAILABLE:
+            query, key, value = query.transpose(1,2), key.transpose(1,2), value.transpose(1,2)
+            if self.attn_mask_enabled and mask is not None:
+                query, indices, q_cu_seqlens, q_max_seqlen_in_batch, _ = unpad_input(query, mask)
+                key, _, k_cu_seqlens, k_max_seqlen_in_batch, _ = unpad_input(key, mask)
+                value, _, _, _, _ = unpad_input(value, mask)
+                x = flash_attn_varlen_func(
+                    query,
+                    key,
+                    value,
+                    q_cu_seqlens,
+                    k_cu_seqlens,
+                    q_max_seqlen_in_batch,
+                    k_max_seqlen_in_batch
+                )
+                x = pad_input(x, indices, batch_size, q_max_seqlen_in_batch)
+                x = x.reshape(batch_size, -1, inner_dim)
+            else:
+                x = flash_attn_func(query, key, value, dropout_p = 0.0, causal = False)
+                x = x.reshape(batch_size, -1, inner_dim)
 
-        x = F.scaled_dot_product_attention(query, key, value, attn_mask = attn_mask, dropout_p = 0.0, is_causal=False)
-        x = x.transpose(1, 2).contiguous().view(batch_size, -1, inner_dim)
+        else:
+            if self.attn_mask_enabled and mask is not None:
+                attn_mask = mask.unsqueeze(1).unsqueeze(1)
+                attn_mask = attn_mask.expand(batch_size, attn.heads, query.shape[-2], key.shape[-2])
+            else:
+                attn_mask = None # bidirectional attention
+
+            x = F.scaled_dot_product_attention(query, key, value, attn_mask = attn_mask, dropout_p = 0.0, is_causal=False)
+            x = x.transpose(1, 2).reshape(batch_size, -1, inner_dim)
 
         x = x.to(query.dtype)
         # linear proj
@@ -198,11 +227,8 @@ class DiTBlock(nn.Module):
 
     def forward(self, x, t, mask = None, rope = None):
         norm, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.attn_norm(x, emb=t)
-
-        # attention
         attn_output = self.attn(x=norm, mask=mask, rope=rope)
 
-        # process attention output for input x
         x = x + gate_msa.unsqueeze(1) * attn_output
 
         norm = self.ff_norm(x) * (1 + scale_mlp[:, None]) + shift_mlp[:, None]
