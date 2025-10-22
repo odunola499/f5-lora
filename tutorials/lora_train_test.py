@@ -1,8 +1,5 @@
 from f5_lora.train import get_loader, TrainModule, train_model
 from f5_lora.config import Config, HFData
-from datasets import load_dataset
-
-import soundfile as sf
 
 
 config = Config()
