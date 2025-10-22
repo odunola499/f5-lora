@@ -52,6 +52,7 @@ class StreamHFDataset(IterableDataset):
         audio, sr = torchaudio.load(io.BytesIO(audio))
         if sr != self.sample_rate:
             audio = torchaudio.transforms.Resample(sr, self.sample_rate)(audio)
+        audio = audio[:, :int(self.sample_rate * 30.0)]
         duration = audio.shape[-1] / self.sample_rate
         return audio, self.sample_rate, duration
 
