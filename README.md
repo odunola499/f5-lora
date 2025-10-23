@@ -188,7 +188,7 @@ manager.swap("excited")  # Switch to excited style
 manager.delete("calm")
 ```
 ### Notes
-- I set `alpha` to 32 and `rank` to 4 as default values as this showed the best performance in my tests, but these can be adjusted based on your requirements.
+- I set `alpha` to 32 and `rank` to 64 as default values as this showed the best performance in my tests, but these can be adjusted based on your requirements.
 - Do tinker with the LoRA target modules as well. Currently all Linear layers in the model are specified as target modules. check `modules/lora.py`. You may get much better results
 
 ## Acknowledgments
