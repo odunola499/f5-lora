@@ -10,6 +10,12 @@ class HFData(BaseModel):
     audio_column:str = 'audio'
     stream:bool = True
 
+class LocalData(BaseModel):
+    manifest_file:str
+    text_column:str = 'text'
+    audio_column:str = 'audio_filepath'
+    audio_dir:Optional[str] = None
+
 @dataclass
 class AudioConfig:
     sample_rate: int = 24000

@@ -3,7 +3,7 @@ from f5_lora.infer.inference import Inference, Config
 import soundfile as sf
 
 config = Config()
-#config.ckpt_path = "path/to/your/checkpoint.safetensors"
+config.ckpt_path = "checkpoint.safetensors" #p Pretrained checkpoint
 
 infer = Inference(config)
 

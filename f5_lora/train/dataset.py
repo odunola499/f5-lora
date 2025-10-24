@@ -1,10 +1,12 @@
 import io
 import os
+import csv
+import json
 import torch
 from datasets import load_dataset, Audio
 from torch.utils.data import Dataset, IterableDataset, DataLoader
 from f5_lora.modules.utils import MelSpec
-from f5_lora.config import HFData, Config
+from f5_lora.config import HFData, LocalData, Config
 import numpy as np
 import librosa
 from io import BytesIO
@@ -36,13 +38,6 @@ class StreamHFDataset(IterableDataset):
 
         self.config = config
         self.dataset = hf_dataset
-
-    def get_frame_len(self, array:np.ndarray):
-        return array / self.hop_length
-
-    def bytes_to_array(self, audio:bytes):
-        audio, sr = librosa.load(BytesIO(audio), sr=self.sample_rate)
-        return audio, sr
 
     def normalize(self, tensor:torch.Tensor):
         return (tensor / tensor.abs().max()) * 0.6
@@ -99,12 +94,6 @@ class HFDataset(Dataset):
         self.config = config
         self.dataset = hf_dataset
 
-    def get_frame_len(self, array: np.ndarray):
-        return array / self.hop_length
-
-    def bytes_to_array(self, audio: bytes):
-        audio, sr = librosa.load(BytesIO(audio), sr=self.sample_rate)
-        return audio, sr
 
     def bytes_to_tensor(self, audio: bytes):
         audio, sr = torchaudio.load(io.BytesIO(audio))
@@ -134,6 +123,78 @@ class HFDataset(Dataset):
             'mel_spec': mel_spec,
             'text': text
         }
+
+class LocalAudioDataset(Dataset):
+    def __init__(self,
+                 config: Config,
+                 local_data: LocalData):
+        super().__init__()
+
+        manifest_path = local_data.manifest_file
+        audio_column_name = local_data.audio_column
+        audio_dir = local_data.audio_dir
+        text_column_name = local_data.text_column
+
+        self.config = config
+        self.sample_rate = config.audio.sample_rate
+
+        self.mel_spec = MelSpec(
+            n_fft=config.audio.n_fft,
+            hop_length=config.audio.hop_length,
+            win_length=config.audio.win_length,
+            n_mel_channels=config.audio.n_mel_channels,
+            target_sample_rate=config.audio.sample_rate,
+            mel_spec_type=config.audio.mel_spec_type
+        )
+
+        self.data = self._load_manifest(manifest_path)
+        self.audio_dir = audio_dir
+        self.audio_column_name = audio_column_name
+        self.text_column_name = text_column_name
+
+    def _load_manifest(self, manifest_path: str):
+        data = []
+        if manifest_path.endswith('jsonl'):
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    data.append(json.loads(line))
+
+        elif manifest_path.endswith(".csv"):
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                data = list(reader)
+        else:
+            raise ValueError("Only .jsonl and .csv is supported")
+
+        return data
+
+    def normalize(self, tensor: torch.Tensor):
+        return (tensor / tensor.abs().max()) * 0.6
+
+    def _load_audio(self, filepath: str):
+        if self.audio_dir and not os.path.isabs(filepath):
+            filepath = os.path.join(self.audio_dir, filepath)
+        audio, sr = torchaudio.load(filepath)
+        if sr != self.sample_rate:
+            audio = torchaudio.transforms.Resample(sr, self.sample_rate)(audio)
+        return audio
+
+    def __getitem__(self, idx: int):
+        item = self.data[idx]
+        audio_path = item[self.audio_column_name]
+        text = item[self.text_column_name]
+
+        waveform = self._load_audio(audio_path)
+        waveform = self.normalize(waveform)
+        mel_spec = self.mel_spec(waveform).squeeze(0)
+
+        return {
+            "mel_spec": mel_spec,
+            "text": text
+        }
+
+    def __len__(self):
+        return len(self.data)
 
 def collate_fn(batch):
     mel_specs = [item["mel_spec"].squeeze(0) for item in batch]
@@ -192,17 +253,30 @@ def get_loader(
         print(f"Dataset loaded from {hf_url} and split {hf_split}, number of samples: {len(dataset)}")
     return loader
 
-if __name__ == "__main__":
-    hf_url = 'hf-internal-testing/librispeech_asr_demo'
-    batch_size = 4
-    config = Config()
-    hf_split = 'validation'
-    loader = get_loader(hf_url, batch_size, config, hf_split=hf_split, stream=True)
+def get_local_loader(
+        batch_size,
+        config:Config,
+        local_data: LocalData
+):
 
-    for i, batch in enumerate(loader):
-        print(batch['mel'].shape, batch['text'])
-        if i > 10:
-            break
+    dataset = LocalAudioDataset(
+        config = config,
+        local_data = local_data
+    )
+
+    loader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        drop_last=True,
+        num_workers=os.cpu_count(),
+        prefetch_factor=2,
+        collate_fn=collate_fn
+    )
+    print(f"Dataset loaded from {local_data.manifest_file}, number of samples: {len(dataset)}")
+    return loader
+
+
 
 
 

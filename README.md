@@ -1,13 +1,17 @@
 # F5-LoRA: Efficient Low-Rank Adaptation for Flow-Matching TTS
 
-This repository extends the F5-TTS (A Fairytaler that Fakes Fluent and Faithful Speech with Flow Matching) model repo code with easy support for LoRA and full parameter finetuning. This allows for easy lightweight style transfer and voice cloning.
+This repository extends the F5-TTS (A Fairytaler that Fakes Fluent and Faithful Speech with Flow Matching) model repo [code](https://github.com/SWivid/F5-TTS) with easy support for LoRA and full parameter finetuning. This allows for easy lightweight style transfer and voice cloning.
 
+You should be able to make a clone of your voice with remarkable accuracy after finetune on a google colab, or a voice style + acceptable zero shot voice cloning.
+
+
+Training rewritten in Pytorch Lightning.
 Check out the sample files in the tutorial/ repo for quckstart examples.
 
 
 [▶️ Before Finetune ](./samples/before_finetune.wav)
 
-[▶️ After Lora Finetune](./samples/after_finetune.wav)
+[▶️ After Finetune](./samples/after_finetune.wav)
 ## Features
 
 - **LoRA Fine-tuning**: Efficient adaptation using Low-Rank matrices
@@ -64,7 +68,44 @@ print("Initialized LoRA modules.")
 
 train_model(config=config, train_module=train_module)
 ```
+or if you have a manifest file that looks like this
 
+```commandline
+{"audio": "path/to/audio_1.wav", "text": "Hello, this is the first sample."}
+{"audio": "path/to/audio_2.wav", "text": "This is another recording of the same speaker."}
+{"audio": "path/to/audio_3.wav", "text": "The quick brown fox jumps over the lazy dog."}
+```
+
+you can run training like so
+ 
+```commandline
+from f5_lora.train import get_local_loader, TrainModule, train_model
+from f5_lora.config import Config, LocalData
+
+config = Config()
+config.train.learning_rate = 1e-5
+config.train.max_steps = 3000
+config.train.warmup_steps = 300
+config.train.batch_size = 2
+config.train.save_interval = 50
+config.train.grad_accumulation_steps = 4
+
+local_data = LocalData(
+    audio_dir="data/audio",
+    manifest_file="data/manifest.jsonl",
+    audio_column="audio",
+    text_column="text"
+)
+
+train_loader = get_local_loader(batch_size=config.train.batch_size, config=config, local_data=local_data)
+
+train_module = TrainModule(config, train_loader, lora=True)
+
+train_model(config=config, train_module=train_module)
+
+
+```
+This would also apply for full parameter finetune, below.
 #### LoRA Inference
 
 ```python
@@ -113,7 +154,7 @@ sf.write('output.wav', audio_segment, final_sample_rate)
 
 ### Full Parameter Fine-tuning
 
-For scenarios where you need maximum adaptation capability:
+For scenarios where you need maximum adaptation capability and performance:
 
 ```python
 from f5_lora.train import get_loader, TrainModule, train_model
@@ -145,6 +186,7 @@ train_module = TrainModule(config, train_loader)  # No LoRA flag = full fine-tun
 
 train_model(config=config, train_module=train_module)
 ```
+Check the `tutorial\` repo for steps on full parameter inference
 
 ## Lora Manager
 
@@ -189,10 +231,12 @@ manager.delete("calm")
 ```
 ### Notes
 - I set `alpha` to 32 and `rank` to 64 as default values as this showed the best performance in my tests, but these can be adjusted based on your requirements.
-- Do tinker with the LoRA target modules as well. Currently all Linear layers in the model are specified as target modules. check `modules/lora.py`. You may get much better results
+- Do tinker with the LoRA target modules as well. Currently all Linear layers in the model are specified as target modules. check `modules/lora.py`. You may get much better results.
+- Much better performance with full parameter finetune but please try out different hyperparameters for LoRA.
+- When training, for convenience two different checkpoints types are saved. The folder `checkpoints`(by default) saved the ema weights in .safetensors. This makes it easy for direct inference with the sample code given. the `train_checkpoints/` folder saves the entire trainer state and can be used to resume a training run. 
 
 ## Acknowledgments
 
 - Original F5-TTS implementation seen [here](https://github.com/SWivid/F5-TTS)
 - LoRA paper: [LoRA: Low-Rank Adaptation of Large Language Models](https://arxiv.org/abs/2106.09685)
-- HuggingFace for dataset and model hosting infrastructure.
+- HuggingFace for their opensource framework.

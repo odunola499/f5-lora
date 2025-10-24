@@ -72,7 +72,7 @@ def list_str_to_tensor(text: list[str], padding_value=-1):
     text = torch.nn.utils.rnn.pad_sequence(list_tensors, padding_value=padding_value, batch_first=True)
     return text
 
-def mask_from_frac_lengths(seq_len, frac_lengths: Tensor):  # noqa: F722 F821
+def mask_from_frac_lengths(seq_len, frac_lengths: Tensor):
     lengths = (frac_lengths * seq_len).long()
     max_start = seq_len - lengths
 
