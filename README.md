@@ -12,6 +12,10 @@ Check out the sample files in the tutorial/ repo for quckstart examples.
 [▶️ source voice ](./samples/audio.wav)
 
 [▶️ output from LoRA Adapter](./samples/question.wav)
+
+[▶️ source voice  ](./samples/original_nigerian_female.wav)
+
+[▶️ output from LoRA Adapter](./samples/f5lora_nigerian_female.wav)
 ## Features
 
 - **LoRA Fine-tuning**: Efficient adaptation using Low-Rank matrices
