@@ -175,6 +175,7 @@ class LocalAudioDataset(Dataset):
         if self.audio_dir and not os.path.isabs(filepath):
             filepath = os.path.join(self.audio_dir, filepath)
         audio, sr = torchaudio.load(filepath)
+        audio = audio[:,:(sr * 30)]
         if sr != self.sample_rate:
             audio = torchaudio.transforms.Resample(sr, self.sample_rate)(audio)
         return audio

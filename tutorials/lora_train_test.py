@@ -3,13 +3,13 @@ from f5_lora.config import Config, HFData
 
 
 config = Config()
-config.train.learning_rate = 1e-5
+config.train.learning_rate = 2e-4
 config.train.max_steps = 3000
 config.train.warmup_steps = 300
-config.train.batch_size = 1
+config.train.batch_size = 8
 config.train.save_interval = 50
-config.train.grad_accumulation_steps=4
-
+config.train.grad_accumulation_steps=1
+config.train.log_to = 'csv'
 train_data= HFData(
     repo_id='odunola/expresso-whisper',
     name = None,
@@ -24,7 +24,7 @@ for batch in train_loader:
     print(batch['mel_lengths'])
     break
 
-train_module = TrainModule(config, train_loader, lora = True, alpha = 32, rank = 128)
+train_module = TrainModule(config, train_loader, lora = True, alpha = 32, rank = 16)
 
 print("Initialized LoRA modules.")
 

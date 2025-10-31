@@ -105,6 +105,7 @@ class LoraManager:
         if self.alpha != alpha or self.rank != rank:
             self.prepare(rank = rank, alpha = alpha)
 
+        state_dict = {i.replace('ema_model.',''):j for i,j in state_dict.items()}
         self.model.load_state_dict(state_dict, strict = False)
         if name:
             self.adapters[name] = state_dict

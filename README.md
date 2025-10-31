@@ -9,9 +9,9 @@ Training rewritten in Pytorch Lightning.
 Check out the sample files in the tutorial/ repo for quckstart examples.
 
 
-[▶️ Before Finetune ](./samples/before_finetune.wav)
+[▶️ source voice ](./samples/audio.wav)
 
-[▶️ After Finetune](./samples/after_finetune.wav)
+[▶️ output from LoRA Adapter](./samples/question.wav)
 ## Features
 
 - **LoRA Fine-tuning**: Efficient adaptation using Low-Rank matrices
@@ -232,8 +232,10 @@ manager.delete("calm")
 ### Notes
 - I set `alpha` to 32 and `rank` to 64 as default values as this showed the best performance in my tests, but these can be adjusted based on your requirements.
 - Do tinker with the LoRA target modules as well. Currently all Linear layers in the model are specified as target modules. check `modules/lora.py`. You may get much better results.
-- Much better performance with full parameter finetune but please try out different hyperparameters for LoRA.
+- Much better performance with full parameter finetune but please try out different hyperparameters for LoRA (alpha >= 2*rank).
 - When training, for convenience two different checkpoints types are saved. The folder `checkpoints`(by default) saved the ema weights in .safetensors. This makes it easy for direct inference with the sample code given. the `train_checkpoints/` folder saves the entire trainer state and can be used to resume a training run. 
+- Feel free to play around with a couple of adapters [here](https://huggingface.co/odunola/pretrained_adapters/tree/main). I'd be updating this repo with cool ones i train anytime i do.
+- Please use this responsibly.
 
 ## Acknowledgments
 
