@@ -61,7 +61,7 @@ train_data = HFData(
 train_loader = get_loader(config.train.batch_size, config, train_data)
 
 
-train_module = TrainModule(config, train_loader, lora=True)
+train_module = TrainModule(config, train_loader, lora=True, alpha = 32, rank = 128)
 
 print("Initialized LoRA modules.")
 

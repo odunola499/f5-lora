@@ -24,7 +24,7 @@ for batch in train_loader:
     print(batch['mel_lengths'])
     break
 
-train_module = TrainModule(config, train_loader, lora = True)
+train_module = TrainModule(config, train_loader, lora = True, alpha = 32, rank = 128)
 
 print("Initialized LoRA modules.")
 
