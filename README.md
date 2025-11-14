@@ -82,7 +82,7 @@ or if you have a manifest file that looks like this
 
 you can run training like so
  
-```commandline
+```python
 from f5_lora.train import get_local_loader, TrainModule, train_model
 from f5_lora.config import Config, LocalData
 
@@ -139,7 +139,7 @@ manager = LoraManager(model)
 manager.load(adapter_path, name='my_adapter')
 
 
-infer = Inference(config)
+infer = Inference(config,model = manager.model.to(device = device, dtype = torch.float32))
 
 
 ref_text = "Monday, there's gonna be haze, but Tuesday, look for thunderstorms."
