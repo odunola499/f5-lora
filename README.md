@@ -9,13 +9,13 @@ Training rewritten in Pytorch Lightning.
 Check out the sample files in the tutorial/ repo for quckstart examples.
 
 
-[▶️ source voice ](./samples/audio.wav)
+1. **Voice Effects**
+    1. **Reference Audio:** [drive link](https://drive.google.com/file/d/1kIOpk547k_pXHdTM9U9o51HoWpWQ8D9U/view?usp=sharing)
+    2. **Output Audio:** [drive link](https://drive.google.com/file/d/1bota299qYpjzEx9y7eEb1tCeyRC1_Tf1/view?usp=sharing)
+2. Voice Cloning
+    1. **Reference Audio:** [drive link](https://drive.google.com/file/d/1w1stYj_g_NbxB30gpN7RNPNxlJgo2gGd/view?usp=sharing)
+    2. **Output Audio:** [drive link](https://drive.google.com/file/d/1G6hRLSQRF6LMrIc96_0fPj0rMrKngTR-/view?usp=sharing)
 
-[▶️ output from LoRA Adapter](./samples/question.wav)
-
-[▶️ source voice  ](./samples/original_nigerian_female.wav)
-
-[▶️ output from LoRA Adapter](./samples/f5lora_nigerian_female.wav)
 ## Features
 
 - **LoRA Fine-tuning**: Efficient adaptation using Low-Rank matrices

@@ -32,18 +32,6 @@ class LoraLinear(nn.Module):
     def lora_state(self):
         return {k: v for k, v in self.state_dict().items() if "lora" in k}
 
-modules = [
-    'pwconv1',
-    'pwconv2',
-    'proj',
-    'proj_out',
-    'to_q',
-    'to_k',
-    'to_v',
-    'ff.2',
-    '0.0'
-    'to_out.0'
-]
 
 def _set_submodule(model, name, new_module):
     parts = name.split('.')
@@ -65,7 +53,6 @@ class LoraManager:
         self.rank = None
         self.adapters = {}
         self.active = None
-        self.MODULES = modules
 
     def prepare(self, rank = 4, alpha = 8, report = True):
         self.rank = rank
