@@ -4,6 +4,7 @@ from torch import nn, Tensor
 from torch.nn.utils.rnn import pad_sequence
 from torchdiffeq import odeint
 from .utils import get_epss_timesteps, lens_to_mask, list_str_to_idx, list_str_to_tensor, mask_from_frac_lengths, MelSpec
+from .utils import manual_euler
 from random import random
 from .lora import LoraManager
 
@@ -175,7 +176,8 @@ class CFM(nn.Module):
         if sway_sampling_coef is not None:
             t = t + sway_sampling_coef * (torch.cos(torch.pi / 2 * t) - 1 + t)
 
-        trajectory = odeint(fn, y0, t, **self.odeint_kwargs)
+        #trajectory = odeint(fn, y0, t, **self.odeint_kwargs)
+        trajectory = manual_euler(fn, y0, t)
         self.transformer.clear_cache()
 
         sampled = trajectory[-1]

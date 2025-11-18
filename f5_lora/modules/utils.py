@@ -82,85 +82,6 @@ def mask_from_frac_lengths(seq_len, frac_lengths: Tensor):
 
     return mask_from_start_end_indices(seq_len, start, end)
 
-
-class GRN(nn.Module):
-    def __init__(self, dim):
-        super().__init__()
-        self.gamma = nn.Parameter(torch.zeros(1, 1, dim))
-        self.beta = nn.Parameter(torch.zeros(1, 1, dim))
-
-    def forward(self, x):
-        Gx = torch.norm(x, p = 2, dim = 1, keepdim = True)
-        Nx = Gx / (Gx.mean(dim = -1, keepdim = True) + 1e-6)
-        return self.gamma * (x * Nx) + self.beta + x
-
-class RMSNorm(nn.Module):
-    def __init__(self, dim, eps = 1e-8):
-        super().__init__()
-        self.eps = eps
-        self.weight = nn.Parameter(torch.ones(dim))
-
-    def forward(self, x):
-        weight = self.weight
-        with torch.autocast(dtype = torch.float32, device_type=x.device.type):
-            x = F.rms_norm(x, normalized_shape=(x.shape[-1],), weight=weight, eps=self.eps)
-        return x
-
-class RotaryEmbedding(nn.Module):
-    def __init__(
-        self,
-        dim,
-        use_xpos = False,
-        scale_base = 512,
-        interpolation_factor = 1.,
-        base = 10000,
-        base_rescale_factor = 1.
-    ):
-        super().__init__()
-        base *= base_rescale_factor ** (dim / (dim - 2))
-
-        inv_freq = 1. / (base ** (torch.arange(0, dim, 2).float() / dim))
-        self.register_buffer('inv_freq', inv_freq)
-
-        assert interpolation_factor >= 1.
-        self.interpolation_factor = interpolation_factor
-
-        if not use_xpos:
-            self.register_buffer('scale', None)
-            return
-
-        scale = (torch.arange(0, dim, 2) + 0.4 * dim) / (1.4 * dim)
-
-        self.scale_base = scale_base
-        self.register_buffer('scale', scale)
-
-    def forward_from_seq_len(self, seq_len):
-        device = self.inv_freq.device
-
-        t = torch.arange(seq_len, device = device)
-        return self.forward(t)
-
-    @torch.autocast('cuda', enabled = False)
-    def forward(self, t, offset = 0):
-        max_pos = t.max() + 1
-
-        if t.ndim == 1:
-            t = rearrange(t, 'n -> 1 n')
-
-        freqs = torch.einsum('b i , j -> b i j', t.type_as(self.inv_freq), self.inv_freq) / self.interpolation_factor
-        freqs = torch.stack((freqs, freqs), dim = -1)
-        freqs = rearrange(freqs, '... d r -> ... (d r)')
-
-        if not self.scale:
-            return freqs, 1.
-
-        power = (t - (max_pos // 2)) / self.scale_base
-        scale = self.scale ** rearrange(power, '... n -> ... n 1')
-        scale = torch.stack((scale, scale), dim = -1)
-        scale = rearrange(scale, '... d r -> ... (d r)')
-
-        return freqs, scale
-
 def rotate_half(x):
     x = rearrange(x, '... (d r) -> ... d r', r = 2)
     x1, x2 = x.unbind(dim = -1)
@@ -259,6 +180,102 @@ def get_vocos_mel_spectrogram(
     mel = mel_stft(waveform)
     mel = mel.clamp(min=1e-5).log()
     return mel
+
+def manual_euler(func, x0:Tensor, t:Tensor):
+    x = x0.clone() # Initial, currently would be just noice
+    xs = [x0]
+
+    for i in range(len(t) - 1):
+        t_i = t[i]
+        t_next = t[i+1]
+        dt = t_next - t_i
+
+        dx = func(t_i, x)
+        x = x + dt * dx
+        xs.append(x)
+    return xs
+
+
+
+
+class GRN(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.gamma = nn.Parameter(torch.zeros(1, 1, dim))
+        self.beta = nn.Parameter(torch.zeros(1, 1, dim))
+
+    def forward(self, x):
+        Gx = torch.norm(x, p = 2, dim = 1, keepdim = True)
+        Nx = Gx / (Gx.mean(dim = -1, keepdim = True) + 1e-6)
+        return self.gamma * (x * Nx) + self.beta + x
+
+class RMSNorm(nn.Module):
+    def __init__(self, dim, eps = 1e-8):
+        super().__init__()
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(dim))
+
+    def forward(self, x):
+        weight = self.weight
+        with torch.autocast(dtype = torch.float32, device_type=x.device.type):
+            x = F.rms_norm(x, normalized_shape=(x.shape[-1],), weight=weight, eps=self.eps)
+        return x
+
+class RotaryEmbedding(nn.Module):
+    def __init__(
+        self,
+        dim,
+        use_xpos = False,
+        scale_base = 512,
+        interpolation_factor = 1.,
+        base = 10000,
+        base_rescale_factor = 1.
+    ):
+        super().__init__()
+        base *= base_rescale_factor ** (dim / (dim - 2))
+
+        inv_freq = 1. / (base ** (torch.arange(0, dim, 2).float() / dim))
+        self.register_buffer('inv_freq', inv_freq)
+
+        assert interpolation_factor >= 1.
+        self.interpolation_factor = interpolation_factor
+
+        if not use_xpos:
+            self.register_buffer('scale', None)
+            return
+
+        scale = (torch.arange(0, dim, 2) + 0.4 * dim) / (1.4 * dim)
+
+        self.scale_base = scale_base
+        self.register_buffer('scale', scale)
+
+    def forward_from_seq_len(self, seq_len):
+        device = self.inv_freq.device
+
+        t = torch.arange(seq_len, device = device)
+        return self.forward(t)
+
+    @torch.autocast('cuda', enabled = False)
+    def forward(self, t, offset = 0):
+        max_pos = t.max() + 1
+
+        if t.ndim == 1:
+            t = rearrange(t, 'n -> 1 n')
+
+        freqs = torch.einsum('b i , j -> b i j', t.type_as(self.inv_freq), self.inv_freq) / self.interpolation_factor
+        freqs = torch.stack((freqs, freqs), dim = -1)
+        freqs = rearrange(freqs, '... d r -> ... (d r)')
+
+        if not self.scale:
+            return freqs, 1.
+
+        power = (t - (max_pos // 2)) / self.scale_base
+        scale = self.scale ** rearrange(power, '... n -> ... n 1')
+        scale = torch.stack((scale, scale), dim = -1)
+        scale = rearrange(scale, '... d r -> ... (d r)')
+
+        return freqs, scale
+
 
 
 class MelSpec(nn.Module):
